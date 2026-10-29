@@ -71,7 +71,6 @@ public abstract class ChunkListener implements Listener {
                 rateLimit--;
                 physicsFreeze = false;
                 itemFreeze = false;
-                lastZ = Integer.MIN_VALUE;
                 physSkip = 0;
                 physCancelPair = Long.MIN_VALUE;
                 physCancel = false;
