@@ -248,7 +248,9 @@ public class BukkitTaskManager extends TaskManager {
         if (!this.folia) {
             return super.sync(function);
         }
-        if (isGlobalTickThread()) {
+        if (isTickingThread()) {
+            // Already on a server thread: running inline keeps legacy call sites on their own region instead of
+            // handing the work to the async pool, which cannot touch world state at all
             return function.get();
         }
         final CompletableFuture<T> future = new CompletableFuture<>();

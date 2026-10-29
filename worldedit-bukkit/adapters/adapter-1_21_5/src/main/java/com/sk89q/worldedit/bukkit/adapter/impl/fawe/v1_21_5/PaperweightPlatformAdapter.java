@@ -235,6 +235,10 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
 
     public static CompletableFuture<LevelChunk> ensureLoaded(ServerLevel serverLevel, int chunkX, int chunkZ) {
         if (PaperSupport.isFolia()) {
+            if (!isRegionised(serverLevel.getWorld())) {
+                // Private levels (the regeneration source) belong to no region and are only touched by their owner
+                return CompletableFuture.completedFuture(serverLevel.getChunk(chunkX, chunkZ));
+            }
             // Regionised servers: chunk loading is synchronous on the thread owning the chunk's region and must not be
             // handed to another thread. submitAt runs inline when this thread already owns the region.
             return TaskManager.taskManager().submitAt(
@@ -285,6 +289,9 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
 
     public static @Nullable LevelChunk getChunkImmediatelyAsync(ServerLevel serverLevel, int chunkX, int chunkZ) {
         if (PaperSupport.isFolia()) {
+            if (!isRegionised(serverLevel.getWorld())) {
+                return serverLevel.getChunk(chunkX, chunkZ);
+            }
             // Only the owning region thread may look at the chunk, every other thread has to report "not available"
             if (!Bukkit.isOwnedByCurrentRegion(serverLevel.getWorld(), chunkX, chunkZ)) {
                 return null;
@@ -319,6 +326,24 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
         }
     }
 
+    private static final java.util.Set<String> REGIONISED_WORLDS = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /**
+     * Whether the level takes part in the regioniser. Levels created for regeneration are private to FAWE, are not
+     * registered with the server, and have to be driven from the calling thread.
+     */
+    public static boolean isRegionised(org.bukkit.World world) {
+        final String name = world.getName();
+        if (REGIONISED_WORLDS.contains(name)) {
+            return true;
+        }
+        if (Bukkit.getWorld(name) != null) {
+            REGIONISED_WORLDS.add(name);
+            return true;
+        }
+        return false;
+    }
+
     private static void addTicket(ServerLevel serverLevel, int chunkX, int chunkZ) {
         final Runnable addTicket = () -> serverLevel
                 .getChunkSource()
@@ -343,6 +368,10 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
 
     public static void sendChunk(IntPair pair, ServerLevel nmsWorld, int chunkX, int chunkZ) {
         if (PaperSupport.isFolia()) {
+            if (!isRegionised(nmsWorld.getWorld())) {
+                sendChunkNow(pair, nmsWorld, chunkX, chunkZ);
+                return;
+            }
             // Reading the chunk, building the packet and sending it all belong to the region owning the chunk
             TaskManager.taskManager().executeAt(
                     BukkitAdapter.adapt(nmsWorld.getWorld()),
