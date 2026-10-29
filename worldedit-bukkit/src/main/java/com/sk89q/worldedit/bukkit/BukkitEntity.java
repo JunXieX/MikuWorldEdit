@@ -111,21 +111,29 @@ public class BukkitEntity implements Entity {
 
     @Override
     public boolean remove() {
-        // synchronize the whole method, not just the remove operation as we always need to synchronize and
-        // can make sure the entity reference was not invalidated in the few milliseconds between the next available tick (lol)
-        return TaskManager.taskManager().sync(() -> {
-            org.bukkit.entity.Entity entity = entityRef.get();
-            if (entity != null) {
-                try {
-                    entity.remove();
-                } catch (UnsupportedOperationException e) {
-                    return false;
+        // The entity may only be removed by the thread owning its region, so the hop has to be location bound
+        final org.bukkit.entity.Entity entity = entityRef.get();
+        if (entity == null) {
+            return true;
+        }
+        final org.bukkit.Location location = entity.getLocation();
+        return TaskManager.taskManager().submitAt(
+                BukkitAdapter.adapt(location.getWorld()),
+                location.getBlockX() >> 4,
+                location.getBlockZ() >> 4,
+                () -> {
+                    final org.bukkit.entity.Entity current = entityRef.get();
+                    if (current == null) {
+                        return true;
+                    }
+                    try {
+                        current.remove();
+                    } catch (UnsupportedOperationException e) {
+                        return false;
+                    }
+                    return current.isDead();
                 }
-                return entity.isDead();
-            } else {
-                return true;
-            }
-        });
+        ).join();
     }
 
     @SuppressWarnings("unchecked")

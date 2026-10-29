@@ -97,36 +97,31 @@ public abstract class ChunkListener implements Listener {
      * @deprecated see {@link com.fastasyncworldedit.bukkit.listener.ChunkListener} for an explanation of the deprecation
      */
     @Deprecated(since = "2.0.0")
-    public static boolean physicsFreeze = false;
+    public static volatile boolean physicsFreeze = false;
     /**
      * @deprecated see {@link com.fastasyncworldedit.bukkit.listener.ChunkListener} for an explanation of the deprecation
      */
     @Deprecated(since = "2.0.0")
-    public static boolean itemFreeze = false;
+    public static volatile boolean itemFreeze = false;
 
     protected final Long2ObjectOpenHashMap<Boolean> badChunks = new Long2ObjectOpenHashMap<>();
+    // guarded by "counter": several region threads report physics events concurrently on a regionised server
     private final Long2ObjectOpenHashMap<int[]> counter = new Long2ObjectOpenHashMap<>();
-    private int lastX = Integer.MIN_VALUE;
-    private int lastZ = Integer.MIN_VALUE;
-    private int[] lastCount;
 
     /**
      * @deprecated see {@link com.fastasyncworldedit.bukkit.listener.ChunkListener} for an explanation of the deprecation
      */
     @Deprecated(since = "2.0.0")
     public int[] getCount(int cx, int cz) {
-        if (lastX == cx && lastZ == cz) {
-            return lastCount;
-        }
-        lastX = cx;
-        lastZ = cz;
         long pair = MathMan.pairInt(cx, cz);
-        int[] tmp = lastCount = counter.get(pair);
-        if (tmp == null) {
-            lastCount = tmp = new int[3];
-            counter.put(pair, tmp);
+        synchronized (counter) {
+            int[] tmp = counter.get(pair);
+            if (tmp == null) {
+                tmp = new int[3];
+                counter.put(pair, tmp);
+            }
+            return tmp;
         }
-        return tmp;
     }
 
     /**

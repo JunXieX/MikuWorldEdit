@@ -98,7 +98,11 @@ public abstract class QueueHandler implements Trimable, Runnable {
     private long allocate = 50;
 
     protected QueueHandler() {
-        TaskManager.taskManager().repeat(this, 1);
+        // Regionised servers never hand tasks to this pump (sync is dispatched to the global region instead), so
+        // registering it would only cost a task every tick.
+        if (!TaskManager.taskManager().isFolia()) {
+            TaskManager.taskManager().repeat(this, 1);
+        }
     }
 
     @ApiStatus.Internal

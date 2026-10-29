@@ -70,7 +70,8 @@ public class BukkitTaskManager extends TaskManager {
         if (!this.folia) {
             return Fawe.isMainThread();
         }
-        return ThreadingContextHolder.isGlobalThread();
+        // every tick thread, the global region included, reports true here
+        return Bukkit.isPrimaryThread();
     }
 
     @Override
@@ -141,7 +142,7 @@ public class BukkitTaskManager extends TaskManager {
         }
         return track(Bukkit.getGlobalRegionScheduler().runAtFixedRate(
                 this.plugin,
-                task -> runInGlobalContext(runnable),
+                task -> runnable.run(),
                 interval,
                 interval
         ));
@@ -176,7 +177,7 @@ public class BukkitTaskManager extends TaskManager {
             this.plugin.getServer().getScheduler().runTask(this.plugin, runnable);
             return;
         }
-        Bukkit.getGlobalRegionScheduler().execute(this.plugin, () -> runInGlobalContext(runnable));
+        Bukkit.getGlobalRegionScheduler().execute(this.plugin, runnable);
     }
 
     @Override
@@ -187,7 +188,7 @@ public class BukkitTaskManager extends TaskManager {
         }
         track(Bukkit.getGlobalRegionScheduler().runDelayed(
                 this.plugin,
-                task -> runInGlobalContext(runnable),
+                task -> runnable.run(),
                 Math.max(1L, delay)
         ));
     }
@@ -265,47 +266,12 @@ public class BukkitTaskManager extends TaskManager {
         }
     }
 
-    private void runInGlobalContext(Runnable runnable) {
-        final boolean previous = ThreadingContextHolder.isGlobalThread();
-        ThreadingContextHolder.setGlobalThread(true);
-        try {
-            runnable.run();
-        } finally {
-            ThreadingContextHolder.setGlobalThread(previous);
-        }
-    }
-
     private org.bukkit.World toBukkitWorld(@Nullable com.sk89q.worldedit.world.World world) {
         if (world == null) {
             return null;
         }
         final com.sk89q.worldedit.world.World unwrapped = WorldWrapper.unwrap(world);
         return BukkitAdapter.adapt(unwrapped);
-    }
-
-    /**
-     * Tracks whether the current thread is executing one of this class' region/global callbacks. Region threads are not
-     * identifiable through the API, so callbacks are flagged as they enter.
-     */
-    static final class ThreadingContextHolder {
-
-        private static final ThreadLocal<Boolean> GLOBAL = ThreadLocal.withInitial(() -> Boolean.FALSE);
-        private static final ThreadLocal<Boolean> TICK = ThreadLocal.withInitial(() -> Boolean.FALSE);
-
-        private ThreadingContextHolder() {
-        }
-
-        static boolean isGlobalThread() {
-            return GLOBAL.get();
-        }
-
-        static void setGlobalThread(boolean value) {
-            GLOBAL.set(value);
-        }
-
-        static boolean isTickThread() {
-            return TICK.get();
-        }
     }
 
 }

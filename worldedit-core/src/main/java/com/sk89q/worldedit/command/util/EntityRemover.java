@@ -147,8 +147,14 @@ public class EntityRemover {
             EntityProperties registryType = entity.getFacet(EntityProperties.class);
             if (registryType != null) {
                 if (type.matches(registryType)) {
-                    //FAWE start - Calling this async violates thread safety
-                    TaskManager.taskManager().sync(entity::remove);
+                    //FAWE start - the entity belongs to exactly one region on a regionised server
+                    final com.sk89q.worldedit.util.Location location = entity.getLocation();
+                    TaskManager.taskManager().submitAt(
+                            location.getWorld(),
+                            location.getBlockX() >> 4,
+                            location.getBlockZ() >> 4,
+                            entity::remove
+                    ).join();
                     //FAWE end
                     return true;
                 }
