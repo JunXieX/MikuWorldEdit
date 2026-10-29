@@ -150,10 +150,10 @@ public abstract class Regenerator {
     /**
      * Copies the regenerated blocks on a regionised server.
      * <p>
-     * The temporary level is not part of the regioniser: reading it needs a ticking thread, while writing into the real
-     * world has to happen on each chunk's own region thread. The two are bridged with an in-memory snapshot - the source
-     * chunks are read on the global region thread (in small slices, so the server keeps ticking), and the write phase
-     * then only touches plain arrays before handing the blocks to the regular, region dispatched queue.
+     * The temporary level is not part of the regioniser: loading from it is only allowed on a thread that owns the
+     * matching chunk region, while the write into the real world belongs to that same region anyway. The two are bridged
+     * with an in-memory snapshot, so the write phase only touches plain arrays before handing the blocks to the regular,
+     * region dispatched queue.
      * </p>
      *
      * @param pattern pattern built for platforms with a main thread, unused here
@@ -164,36 +164,14 @@ public abstract class Regenerator {
     }
 
     private Map<Long, SourceChunk> snapshotSource() {
-        final List<BlockVector2> chunks = new ArrayList<>(region.getChunks());
         final Map<Long, SourceChunk> snapshots = new ConcurrentHashMap<>();
-        final CompletableFuture<Void> done = new CompletableFuture<>();
-        final int[] next = {0};
-        final int[] taskId = {-1};
-        taskId[0] = TaskManager.taskManager().repeat(() -> {
-            try {
-                final long start = System.nanoTime();
-                while (next[0] < chunks.size()) {
-                    final BlockVector2 chunkPos = chunks.get(next[0]++);
-                    snapshots.put(MathMan.pairInt(chunkPos.x(), chunkPos.z()), snapshotChunk(chunkPos));
-                    if (System.nanoTime() - start >= TimeUnit.MILLISECONDS.toNanos(5)) {
-                        // give the tick back, the rest of the chunks are read on the next one
-                        return;
-                    }
-                }
-                TaskManager.taskManager().cancel(taskId[0]);
-                done.complete(null);
-            } catch (Throwable t) {
-                TaskManager.taskManager().cancel(taskId[0]);
-                done.completeExceptionally(t);
-            }
-        }, 1);
-        try {
-            done.get();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new RuntimeException(e);
-        } catch (ExecutionException e) {
-            throw new RuntimeException(e.getCause());
+        // Regionised servers only let a chunk be loaded on the thread owning that chunk's region, so every source chunk
+        // is read on the region that owns the same coordinates in the real world. The reads are serialised here.
+        for (BlockVector2 chunkPos : region.getChunks()) {
+            final SourceChunk snapshot = TaskManager.taskManager()
+                    .submitAt(region.getWorld(), chunkPos.x(), chunkPos.z(), () -> snapshotChunk(chunkPos))
+                    .join();
+            snapshots.put(MathMan.pairInt(chunkPos.x(), chunkPos.z()), snapshot);
         }
         return snapshots;
     }
