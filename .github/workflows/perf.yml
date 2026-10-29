@@ -119,7 +119,18 @@ jobs:
               }
           }
           JAVA
-          printf 'name: FawePerf\nversion: 1.0.0\nmain: dev.junxiex.faweperf.PerfPlugin\napi-version: "1.21"\nfolia-supported: true\n' > bench/out/plugin.yml
+          # a CI-only fixture, so the legacy descriptor with its commands section is the least code here
+          cat > bench/out/plugin.yml <<'YAML'
+          name: FawePerf
+          version: 1.0.0
+          main: dev.junxiex.faweperf.PerfPlugin
+          api-version: '1.21'
+          folia-supported: true
+          commands:
+            mwetest:
+              description: Run one benchmark edit
+              usage: /mwetest <size> <offsetX>
+          YAML
 
       - name: Compile harness
         run: |
