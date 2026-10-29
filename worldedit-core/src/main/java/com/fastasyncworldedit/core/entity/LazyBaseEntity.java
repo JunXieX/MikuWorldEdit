@@ -36,10 +36,11 @@ public class LazyBaseEntity extends BaseEntity {
             if (TaskManager.taskManager().isTickingThread()) {
                 setNbt(tmp.get());
             } else if (location != null) {
+                final com.sk89q.worldedit.math.BlockVector3 position = location.toVector().toBlockPoint();
                 setNbt(TaskManager.taskManager().submitAt(
-                        location.getWorld(),
-                        location.getBlockX() >> 4,
-                        location.getBlockZ() >> 4,
+                        com.fastasyncworldedit.core.wrappers.WorldWrapper.unwrap(location.getExtent()),
+                        position.x() >> 4,
+                        position.z() >> 4,
                         tmp
                 ).join());
             } else {

@@ -149,10 +149,11 @@ public class EntityRemover {
                 if (type.matches(registryType)) {
                     //FAWE start - the entity belongs to exactly one region on a regionised server
                     final com.sk89q.worldedit.util.Location location = entity.getLocation();
+                    final com.sk89q.worldedit.math.BlockVector3 position = location.toVector().toBlockPoint();
                     TaskManager.taskManager().submitAt(
-                            location.getWorld(),
-                            location.getBlockX() >> 4,
-                            location.getBlockZ() >> 4,
+                            com.fastasyncworldedit.core.wrappers.WorldWrapper.unwrap(location.getExtent()),
+                            position.x() >> 4,
+                            position.z() >> 4,
                             entity::remove
                     ).join();
                     //FAWE end
