@@ -55,9 +55,20 @@ includeBuild("build-logic")
 
 include("worldedit-libs")
 
-listOf("1_21", "1_21_4", "1_21_5", "1_21_6", "1_21_9", "1_21_11", "26.1", "26.2", "26.3").forEach {
-    include("worldedit-bukkit:adapters:adapter-$it")
+val allAdapters = listOf("1_21", "1_21_4", "1_21_5", "1_21_6", "1_21_9", "1_21_11", "26.1", "26.2", "26.3")
+// -Padapters=26.3,26.2 restricts the build to the listed server adapters (defaults to all of them)
+val adapterSubset = providers.gradleProperty("adapters").orNull
+    ?.split(',')
+    ?.map { it.trim() }
+    ?.filter { it.isNotEmpty() }
+    ?.toSet()
+if (adapterSubset != null) {
+    val unknown = adapterSubset - allAdapters.toSet()
+    require(unknown.isEmpty()) { "Unknown adapter(s) in -Padapters: $unknown. Known: $allAdapters" }
 }
+allAdapters
+    .filter { adapterSubset == null || adapterSubset.contains(it) }
+    .forEach { include("worldedit-bukkit:adapters:adapter-$it") }
 
 listOf("bukkit", "core", "cli").forEach {
     include("worldedit-libs:$it")

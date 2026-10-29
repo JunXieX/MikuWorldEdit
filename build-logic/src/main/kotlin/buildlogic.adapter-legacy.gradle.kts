@@ -5,20 +5,17 @@ plugins {
 }
 
 paperweight {
-    reobfArtifactConfiguration = ReobfArtifactConfiguration.REOBF_PRODUCTION
+    // Only the Mojang-mapped variant is produced: FastAsyncWorldEdit ships a single Paper-targeted JAR.
+    reobfArtifactConfiguration = ReobfArtifactConfiguration.MOJANG_PRODUCTION
     javaLauncher = javaToolchains.launcherFor {
         languageVersion = JavaLanguageVersion.of(21)
     }
-}
-
-tasks.named("assemble") {
-    dependsOn("reobfJar")
 }
 
 tasks
     .withType<JavaCompile>()
     .matching { it.name == "compileJava" || it.name == "compileTestJava" }
     .configureEach {
-        // We use Java 21 for most of the pre-existing adapters.
+        // The pre-26 adapters are written against Java 21.
         options.release.set(21)
     }
