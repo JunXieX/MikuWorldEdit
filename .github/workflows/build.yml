@@ -48,7 +48,7 @@ jobs:
       - name: Collect artifacts
         run: |
           mkdir -p dist
-          cp worldedit-bukkit/build/libs/FastAsyncWorldEdit-Paper-*.jar dist/
+          cp worldedit-bukkit/build/libs/MikuWorldEdit-Paper-*.jar dist/
           ls -l dist
       - name: Archive Artifacts
         uses: actions/upload-artifact@v7

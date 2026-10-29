@@ -23,7 +23,7 @@
 
 ## 安装
 
-1. 下载 `FastAsyncWorldEdit-Paper-*.jar`，放入服务端 `plugins/`。
+1. 下载 `MikuWorldEdit-Paper-*.jar`，放入服务端 `plugins/`。
 2. 启动服务端。首次启动会生成：
    - `plugins/FastAsyncWorldEdit/config.yml`
    - `plugins/FastAsyncWorldEdit/worldedit-config.yml`

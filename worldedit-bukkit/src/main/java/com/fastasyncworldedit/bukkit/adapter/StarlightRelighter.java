@@ -36,7 +36,12 @@ public abstract class StarlightRelighter<SERVER_LEVEL, CHUNK_POS> implements Rel
     private static final int CHUNKS_PER_BATCH = 1024; // 32 * 32
     private static final int CHUNKS_PER_BATCH_SQRT_LOG2 = 5; // for shifting
 
-    private final ReentrantLock RELIGHT_LOCK = new ReentrantLock();
+    /**
+     * Starlight is not reentrant: two edits relighting overlapping chunks at the same time write into the same
+     * {@code DataLayer} instances, so the guard has to be shared by every relighter instead of held per session. A
+     * session that loses the tryLock skips its own relight instead of corrupting the running one.
+     */
+    private static final ReentrantLock RELIGHT_LOCK = new ReentrantLock();
     private final Long2ObjectLinkedOpenHashMap<LongSet> regions = new Long2ObjectLinkedOpenHashMap<>();
     private final ReentrantLock areaLock = new ReentrantLock();
     private final NMSRelighter delegate;

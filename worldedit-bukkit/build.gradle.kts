@@ -150,7 +150,7 @@ tasks.named<Copy>("processResources") {
 }
 
 tasks.named<ShadowJar>("shadowJar") {
-    archiveFileName.set("${rootProject.name}-Paper-${project.version}.${archiveExtension.getOrElse("jar")}")
+    archiveFileName.set("MikuWorldEdit-Paper-${project.version}.${archiveExtension.getOrElse("jar")}")
     configurations.addAll(adaptersMojmap, adaptersGlobalMojmap)
     manifest {
         attributes(

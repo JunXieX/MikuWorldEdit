@@ -170,7 +170,10 @@ public class WorldEditPlugin extends JavaPlugin {
         INSTANCE = this;
 
         //noinspection ResultOfMethodCallIgnored
+        //FAWE start - keep settings when the plugin was renamed from FastAsyncWorldEdit
+        migrateLegacyDataFolder();
         getDataFolder().mkdirs();
+        //FAWE end
 
         //FAWE start - Migrate from config-legacy to worldedit-config
         migrateLegacyConfig();
@@ -432,6 +435,38 @@ public class WorldEditPlugin extends JavaPlugin {
     /**
      * Called on plugin disable.
      */
+    /**
+     * The plugin used to be registered as FastAsyncWorldEdit. Copy the old data folder once so an existing install
+     * keeps its configuration, limits and history settings.
+     */
+    private void migrateLegacyDataFolder() {
+        final File target = getDataFolder();
+        if (new File(target, "config.yml").exists()) {
+            return;
+        }
+        final File legacy = new File(target.getParentFile(), "FastAsyncWorldEdit");
+        if (!legacy.isDirectory()) {
+            return;
+        }
+        try {
+            java.nio.file.Files.walk(legacy.toPath()).forEach(source -> {
+                try {
+                    final java.nio.file.Path destination =
+                            target.toPath().resolve(legacy.toPath().relativize(source));
+                    if (java.nio.file.Files.isDirectory(source)) {
+                        java.nio.file.Files.createDirectories(destination);
+                    } else {
+                        java.nio.file.Files.copy(source, destination, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                    }
+                } catch (java.io.IOException ignored) {
+                }
+            });
+            LOGGER.info("Migrated settings from the previous FastAsyncWorldEdit data folder");
+        } catch (java.io.IOException e) {
+            LOGGER.warn("Could not migrate the previous data folder", e);
+        }
+    }
+
     @Override
     public void onDisable() {
         Fawe.instance().onDisable();

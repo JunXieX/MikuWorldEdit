@@ -134,7 +134,7 @@ jobs:
 
       - name: Compile harness
         run: |
-          FAWE=$(ls worldedit-bukkit/build/libs/FastAsyncWorldEdit-Paper-*.jar | head -1)
+          FAWE=$(ls worldedit-bukkit/build/libs/MikuWorldEdit-Paper-*.jar | head -1)
           CP="$FAWE"
           for pattern in 'paper-api-*.jar' 'adventure-api-*.jar' 'adventure-key-*.jar' 'examination-api-*.jar' 'guava-3*.jar'; do
             jar=$(find ~/.gradle/caches/modules-2 -name "$pattern" | head -1)
@@ -148,7 +148,7 @@ jobs:
           SIZE: ${{ inputs.size }}
           RUNS: ${{ inputs.runs }}
         run: |
-          FAWE=$(ls worldedit-bukkit/build/libs/FastAsyncWorldEdit-Paper-*.jar | head -1)
+          FAWE=$(ls worldedit-bukkit/build/libs/MikuWorldEdit-Paper-*.jar | head -1)
           cp "$FAWE" bench/server/plugins/fawe.jar
           cp bench/perf.jar bench/server/plugins/perf.jar
           cd bench/server

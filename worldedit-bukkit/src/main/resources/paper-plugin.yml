@@ -1,4 +1,4 @@
-name: FastAsyncWorldEdit
+name: MikuWorldEdit
 version: "${internalVersion}"
 main: com.sk89q.worldedit.bukkit.WorldEditPlugin
 api-version: '1.21'
