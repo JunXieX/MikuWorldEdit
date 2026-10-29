@@ -13,6 +13,7 @@ import com.fastasyncworldedit.core.math.IntPair;
 import com.fastasyncworldedit.core.util.MathMan;
 import com.fastasyncworldedit.core.util.TaskManager;
 import com.mojang.serialization.DataResult;
+import com.sk89q.worldedit.bukkit.BukkitAdapter;
 import com.sk89q.worldedit.bukkit.WorldEditPlugin;
 import com.sk89q.worldedit.bukkit.adapter.BukkitImplAdapter;
 import com.sk89q.worldedit.bukkit.adapter.Refraction;
@@ -52,6 +53,7 @@ import net.minecraft.world.level.chunk.Strategy;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.entity.PersistentEntitySectionManager;
 import org.apache.logging.log4j.Logger;
+import org.bukkit.Bukkit;
 import org.bukkit.Chunk;
 import org.bukkit.craftbukkit.CraftChunk;
 import org.enginehub.linbus.tree.LinCompoundTag;
@@ -258,6 +260,16 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
     }
 
     public static CompletableFuture<LevelChunk> ensureLoaded(ServerLevel serverLevel, int chunkX, int chunkZ) {
+        if (PaperSupport.isFolia()) {
+            // Regionised servers: chunk loading is synchronous on the thread owning the chunk's region and must not be
+            // handed to another thread. submitAt runs inline when this thread already owns the region.
+            return TaskManager.taskManager().submitAt(
+                    BukkitAdapter.adapt(serverLevel.getWorld()),
+                    chunkX,
+                    chunkZ,
+                    () -> serverLevel.getChunk(chunkX, chunkZ)
+            );
+        }
         LevelChunk levelChunk = getChunkImmediatelyAsync(serverLevel, chunkX, chunkZ);
         if (levelChunk != null) {
             return CompletableFuture.completedFuture(levelChunk);
@@ -298,6 +310,13 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
     }
 
     public static @Nullable LevelChunk getChunkImmediatelyAsync(ServerLevel serverLevel, int chunkX, int chunkZ) {
+        if (PaperSupport.isFolia()) {
+            // Only the owning region thread may look at the chunk, every other thread has to report "not available"
+            if (!Bukkit.isOwnedByCurrentRegion(serverLevel.getWorld(), chunkX, chunkZ)) {
+                return null;
+            }
+            return serverLevel.getChunk(chunkX, chunkZ);
+        }
         if (!PaperSupport.isPaper()) {
             LevelChunk nmsChunk = serverLevel.getChunkSource().getChunk(chunkX, chunkZ, false);
             if (nmsChunk != null) {
@@ -327,10 +346,16 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
     }
 
     private static void addTicket(ServerLevel serverLevel, int chunkX, int chunkZ) {
-        // Ensure chunk is definitely loaded before applying a ticket
-        io.papermc.paper.util.MCUtil.MAIN_EXECUTOR.execute(() -> serverLevel
+        final Runnable addTicket = () -> serverLevel
                 .getChunkSource()
-                .addTicketWithRadius(ChunkHolderManager.UNLOAD_COOLDOWN, new ChunkPos(chunkX, chunkZ), 0));
+                .addTicketWithRadius(ChunkHolderManager.UNLOAD_COOLDOWN, new ChunkPos(chunkX, chunkZ), 0);
+        if (PaperSupport.isFolia()) {
+            // The global/main executor does not run region work on Folia; this is already the owning region thread
+            addTicket.run();
+            return;
+        }
+        // Ensure chunk is definitely loaded before applying a ticket
+        io.papermc.paper.util.MCUtil.MAIN_EXECUTOR.execute(addTicket);
     }
 
     public static ChunkHolder getPlayerChunk(ServerLevel nmsWorld, final int chunkX, final int chunkZ) {
@@ -342,8 +367,22 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
         }
     }
 
-    @SuppressWarnings("deprecation")
     public static void sendChunk(IntPair pair, ServerLevel nmsWorld, int chunkX, int chunkZ) {
+        if (PaperSupport.isFolia()) {
+            // Reading the chunk, building the packet and sending it all belong to the region owning the chunk
+            TaskManager.taskManager().executeAt(
+                    BukkitAdapter.adapt(nmsWorld.getWorld()),
+                    chunkX,
+                    chunkZ,
+                    () -> sendChunkNow(pair, nmsWorld, chunkX, chunkZ)
+            );
+            return;
+        }
+        sendChunkNow(pair, nmsWorld, chunkX, chunkZ);
+    }
+
+    @SuppressWarnings("deprecation")
+    private static void sendChunkNow(IntPair pair, ServerLevel nmsWorld, int chunkX, int chunkZ) {
         ChunkHolder chunkHolder = getPlayerChunk(nmsWorld, chunkX, chunkZ);
         if (chunkHolder == null) {
             return;
@@ -363,7 +402,7 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
         if (lockHolder.chunkLock == null) {
             return;
         }
-        MinecraftServer.getServer().execute(() -> {
+        final Runnable packetTask = () -> {
             try {
                 ChunkPos pos = levelChunk.getPos();
                 ClientboundLevelChunkWithLightPacket packet;
@@ -389,7 +428,13 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
             } finally {
                 NMSAdapter.endChunkPacketSend(nmsWorld.getWorld().getName(), pair, lockHolder);
             }
-        });
+        };
+        if (PaperSupport.isFolia()) {
+            // Already on the owning region thread, the main thread would be the wrong one here
+            packetTask.run();
+        } else {
+            MinecraftServer.getServer().execute(packetTask);
+        }
     }
 
     private static List<ServerPlayer> nearbyPlayers(ServerLevel serverLevel, ChunkPos coordIntPair) {

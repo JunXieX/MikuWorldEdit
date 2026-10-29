@@ -11,6 +11,7 @@ import com.fastasyncworldedit.core.queue.IQueueExtent;
 import com.fastasyncworldedit.core.queue.implementation.QueueHandler;
 import com.fastasyncworldedit.core.queue.implementation.blocks.CharGetBlocks;
 import com.fastasyncworldedit.core.util.MemUtil;
+import com.fastasyncworldedit.core.util.TaskManager;
 import com.fastasyncworldedit.core.util.task.FaweThreadUtil;
 import com.sk89q.worldedit.extent.Extent;
 import com.sk89q.worldedit.internal.util.LogManagerCompat;
@@ -147,6 +148,26 @@ public abstract class AbstractBukkitGetBlocks<ServerLevel, LevelChunk> extends C
             final Runnable finalizer
     ) throws
             Exception {
+        if (TaskManager.taskManager().isFolia()) {
+            // There is no main thread to hand these to, and the chunk work already runs on the region that owns the
+            // chunk: lighting, heightmaps and packet sending all belong to that same thread.
+            try {
+                for (Runnable task : syncTasks) {
+                    if (task != null) {
+                        task.run();
+                    }
+                }
+                if (callback != null) {
+                    callback.run();
+                } else if (finalizer != null) {
+                    finalizer.run();
+                }
+            } catch (Throwable e) {
+                LOGGER.error("Error performing final chunk calling at {},{}", chunkX, chunkZ, e);
+                throw e;
+            }
+            return null;
+        }
         if (!syncTasks.isEmpty()) {
             QueueHandler queueHandler = Fawe.instance().getQueueHandler();
 

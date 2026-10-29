@@ -108,7 +108,8 @@ public abstract class QueueHandler implements Trimable, Runnable {
 
     @Override
     public void run() {
-        if (!Fawe.isMainThread()) {
+        // Regionised servers drive this pump from the global region thread; there is no single main thread to compare to
+        if (!Fawe.isMainThread() && !TaskManager.taskManager().isFolia()) {
             throw new IllegalStateException("Not main thread");
         }
         if (!syncTasks.isEmpty()) {

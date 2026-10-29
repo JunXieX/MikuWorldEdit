@@ -5,12 +5,14 @@ import com.fastasyncworldedit.core.configuration.Settings;
 import com.fastasyncworldedit.core.queue.implementation.QueueHandler;
 import com.fastasyncworldedit.core.util.task.RunnableVal;
 import com.sk89q.worldedit.internal.util.LogManagerCompat;
+import com.sk89q.worldedit.world.World;
 import org.apache.logging.log4j.Logger;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.util.Collection;
 import java.util.Iterator;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.TimeUnit;
@@ -371,6 +373,150 @@ public abstract class TaskManager {
         } catch (InterruptedException | ExecutionException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    /**
+     * Whether the server ticks worlds on regionised threads (Folia) instead of on a single main thread.
+     * <p>
+     * On such servers no thread may touch arbitrary world state, so the "run this on the main thread and wait" helpers
+     * of this class cannot be used to reach the world. Location aware code has to use
+     * {@link #executeAt(World, int, int, Runnable)} / {@link #submitAt(World, int, int, Supplier)} instead.
+     * </p>
+     *
+     * @return true when the platform is regionised
+     */
+    public boolean isFolia() {
+        return false;
+    }
+
+    /**
+     * Whether the current thread may read and write world state at all.
+     * <p>
+     * On a single threaded server this is the main thread. On a regionised server every region thread (including the
+     * global region thread) qualifies, but such a thread may still only touch the region it currently owns - use
+     * {@link #ownsRegion(World, int, int)} for that.
+     * </p>
+     *
+     * @return true when the current thread is a ticking thread
+     */
+    public boolean isTickingThread() {
+        return Fawe.isMainThread();
+    }
+
+    /**
+     * Whether the current thread may run work that is not tied to any location (game rules, broadcasts, plugin
+     * bookkeeping).
+     *
+     * @return true when the current thread may run global work
+     */
+    public boolean isGlobalTickThread() {
+        return Fawe.isMainThread();
+    }
+
+    /**
+     * Whether the current thread owns the region containing the given chunk, and may therefore read or write that
+     * chunk's world state without a hop.
+     *
+     * @param world  world of the chunk, may be null when unknown
+     * @param chunkX chunk X coordinate
+     * @param chunkZ chunk Z coordinate
+     * @return true when the current thread owns the region
+     */
+    public boolean ownsRegion(@Nullable World world, int chunkX, int chunkZ) {
+        return isTickingThread();
+    }
+
+    /**
+     * Run a task on the thread owning the region of the given chunk.
+     * <p>
+     * Runs immediately when the current thread already owns that region, otherwise the task is handed to a thread
+     * that does.
+     * </p>
+     *
+     * @param world    world of the chunk, may be null when unknown
+     * @param chunkX   chunk X coordinate
+     * @param chunkZ   chunk Z coordinate
+     * @param runnable task to run
+     */
+    public void executeAt(@Nullable World world, int chunkX, int chunkZ, @Nonnull final Runnable runnable) {
+        if (ownsRegion(world, chunkX, chunkZ)) {
+            runnable.run();
+            return;
+        }
+        task(runnable);
+    }
+
+    /**
+     * Run a task on the thread owning the region of the given chunk and return its result.
+     *
+     * @param world    world of the chunk, may be null when unknown
+     * @param chunkX   chunk X coordinate
+     * @param chunkZ   chunk Z coordinate
+     * @param supplier task to run
+     * @param <T>      result type
+     * @return future completed with the task's result
+     */
+    public <T> CompletableFuture<T> submitAt(
+            @Nullable final World world,
+            final int chunkX,
+            final int chunkZ,
+            @Nonnull final Supplier<T> supplier
+    ) {
+        if (ownsRegion(world, chunkX, chunkZ)) {
+            try {
+                return CompletableFuture.completedFuture(supplier.get());
+            } catch (Throwable t) {
+                return CompletableFuture.failedFuture(t);
+            }
+        }
+        final CompletableFuture<T> result = new CompletableFuture<>();
+        task(() -> {
+            try {
+                result.complete(supplier.get());
+            } catch (Throwable t) {
+                result.completeExceptionally(t);
+            }
+        });
+        return result;
+    }
+
+    /**
+     * Run a task on the thread owning the region of the given chunk.
+     *
+     * @param world    world of the chunk, may be null when unknown
+     * @param chunkX   chunk X coordinate
+     * @param chunkZ   chunk Z coordinate
+     * @param runnable task to run
+     * @return future completed once the task ran
+     */
+    public CompletableFuture<Void> submitAt(
+            @Nullable final World world,
+            final int chunkX,
+            final int chunkZ,
+            @Nonnull final Runnable runnable
+    ) {
+        return submitAt(world, chunkX, chunkZ, () -> {
+            runnable.run();
+            return null;
+        });
+    }
+
+    /**
+     * Run work that is not tied to any location on the server's global tick thread.
+     *
+     * @param runnable task to run
+     */
+    public void executeGlobal(@Nonnull final Runnable runnable) {
+        task(runnable);
+    }
+
+    /**
+     * Run work that never touches world state on a worker thread.
+     *
+     * @param runnable task to run
+     */
+    public void executeAsync(@Nonnull final Runnable runnable) {
+        async(runnable);
     }
 
 }

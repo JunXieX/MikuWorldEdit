@@ -20,6 +20,7 @@
 package com.sk89q.worldedit;
 
 import com.fastasyncworldedit.core.Fawe;
+import com.fastasyncworldedit.core.util.TaskManager;
 import com.fastasyncworldedit.core.FaweCache;
 import com.fastasyncworldedit.core.configuration.Caption;
 import com.fastasyncworldedit.core.configuration.Settings;
@@ -500,7 +501,10 @@ public final class EditSessionBuilder {
                 wnaMode = false;
                 if (unwrapped instanceof IQueueExtent) {
                     extent = queue = (IQueueExtent) unwrapped;
-                } else if (Settings.settings().QUEUE.PARALLEL_THREADS > 1 && !Fawe.isMainThread()) {
+                } else if (Settings.settings().QUEUE.PARALLEL_THREADS > 1 && !Fawe.isMainThread()
+                        // Regionised servers parallelise per region already: a shared parallel extent would read chunks
+                        // from threads that do not own them
+                        && !TaskManager.taskManager().isFolia()) {
                     ParallelQueueExtent parallel = new ParallelQueueExtent(
                             Fawe.instance().getQueueHandler(),
                             world,

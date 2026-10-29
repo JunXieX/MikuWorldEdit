@@ -2,6 +2,7 @@ package com.fastasyncworldedit.bukkit.adapter;
 
 import co.aikar.timings.Timings;
 import com.fastasyncworldedit.bukkit.listener.ChunkListener;
+import com.fastasyncworldedit.bukkit.util.PaperSupport;
 import com.fastasyncworldedit.core.queue.implementation.QueueHandler;
 
 import java.lang.reflect.Field;
@@ -31,8 +32,11 @@ public class BukkitQueueHandler extends QueueHandler {
     @Override
     public void startUnsafe(boolean parallel) {
         ChunkListener.physicsFreeze = true;
-        if (parallel) {
+        if (parallel && !PaperSupport.isFolia()) {
             try {
+                if (asyncCatcher == null || timingsCheck == null) {
+                    return;
+                }
                 asyncCatcher.setBoolean(asyncCatcher, false);
                 timingsEnabled = Timings.isTimingsEnabled();
                 if (timingsEnabled) {
@@ -51,8 +55,11 @@ public class BukkitQueueHandler extends QueueHandler {
     @Override
     public void endUnsafe(boolean parallel) {
         ChunkListener.physicsFreeze = false;
-        if (parallel) {
+        if (parallel && !PaperSupport.isFolia()) {
             try {
+                if (asyncCatcher == null || timingsCheck == null) {
+                    return;
+                }
                 asyncCatcher.setBoolean(asyncCatcher, true);
                 if (timingsEnabled) {
                     Timings.setTimingsEnabled(true);

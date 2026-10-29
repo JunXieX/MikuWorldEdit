@@ -255,6 +255,20 @@ public class SingleThreadQueueExtent extends ExtentBatchProcessorHolder implemen
 
         chunk.invalidateWrapper();
 
+        if (TaskManager.taskManager().isFolia()) {
+            final int chunkX = chunk.getX();
+            final int chunkZ = chunk.getZ();
+            if (TaskManager.taskManager().ownsRegion(world, chunkX, chunkZ)) {
+                V result = (V) chunk.call();
+                if (result == null) {
+                    return (V) (Future) Futures.immediateFuture(null);
+                }
+                return result;
+            }
+            // The write itself has to happen on the region that owns the chunk, never on the calling thread
+            return (V) (Future<?>) TaskManager.taskManager().submitAt(world, chunkX, chunkZ, () -> (Future) chunk.call());
+        }
+
         if (Fawe.isMainThread()) {
             V result = (V) chunk.call();
             if (result == null) {
@@ -266,6 +280,7 @@ public class SingleThreadQueueExtent extends ExtentBatchProcessorHolder implemen
 
         return (V) Fawe.instance().getQueueHandler().submit(chunk);
     }
+
 
     @Override
     public <V extends Future<V>> V submitTaskUnchecked(Callable<V> callable) {

@@ -16,14 +16,26 @@ import java.util.concurrent.CompletableFuture;
 public enum PaperSupport {
     ;
     public static final boolean PAPER;
+    public static final boolean FOLIA;
 
     static {
         PAPER = hasClass("com.destroystokyo.paper.PaperConfig")
             || hasClass("io.papermc.paper.configuration.Configuration");
+        // The regionised server classes only exist on Folia (and Folia derived forks)
+        FOLIA = hasClass("io.papermc.paper.threadedregions.RegionizedServer");
     }
 
     public static boolean isPaper() {
         return PAPER;
+    }
+
+    /**
+     * Whether the server ticks worlds on regionised threads instead of a single main thread.
+     *
+     * @return true when running on Folia (or a Folia derived fork)
+     */
+    public static boolean isFolia() {
+        return FOLIA;
     }
 
     public static CompletableFuture<Boolean> teleportAsync(Entity entity, Location location) {
