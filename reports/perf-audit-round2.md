@@ -84,3 +84,15 @@ CI 托管 runner，96³ = 884,736 方块 / 36 区块：
 CI 的 `perf.yml` 本来就是每次换 offset（`i*1000`），所以同一 runner 内的数字一直稳定在 113–205 ms 区间。
 
 也因此，`FaweStreamChangeSet` 的历史合批在 2.17.7 被回退：它的收益从未在有效基线上被证实，而风险面（改历史字节流写入粒度）是真实的。
+## 6. 六项"未做项"的实测评估（2.18.0 定稿）
+
+测量方式：`mweprobe <size> <offset> <baseline|nohistory|nolight|filtered>`，每次换全新区域（吸取 §5 的教训）。
+
+| 项 | 实测 | 结论 |
+| --- | --- | --- |
+| 历史写入合批 | 96³ 里"有历史"与"无历史"相差 40–65 ms（占区块落地 20–28%）；合批后两者落在同一区间，`//undo` 回放 884,736 条记录、方块归零 | **已实施**（2.18.0） |
+| 光照共享锁 | 无竞争时开销为 0；并发编辑时原实现会两批 starlight 同时写同一批 `DataLayer` | **已实施**（2.18.0，static 锁） |
+| 只清相关 section 的光照 | `nolight` 比 baseline 少 80 ms，但清理本身只占几毫秒：64 列 × 24 section × 2 层 × 2 KB ≈ 6 MB 清零；成本主体是 starlight 重算与 3×3 扩张 | **未实施**：收益在别处，改清理范围不对等 |
+| section 三份拷贝 → 两份 | 副本只在开启历史时产生，历史总成本 40–65 ms，去掉一份约 5–10 ms | **未实施**：`createCopy` 承担跨线程数据存活 |
+| `CharSetBlocks` 池失效 | 每区块约 1–2 KB，96³ 合计 36–72 KB | **未实施**：回收入口被 `ChunkHolder.recycle()` 明确拒绝，改生命周期风险不对等 |
+| 空 chunk `Thread.sleep(5-age)` | 批量写路径无法复现；`filtered` 探针跑出 1.8–2.1 s，但那是 `replaceBlocks` 的逐方块访问（约 2 µs/方块），`closeMs` 为 0 | **未实施**：与 sleep 无关，真正的慢点是逐方块 replace 路径 |
