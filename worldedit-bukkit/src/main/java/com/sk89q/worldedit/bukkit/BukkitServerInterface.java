@@ -20,8 +20,8 @@
 package com.sk89q.worldedit.bukkit;
 
 import com.fastasyncworldedit.bukkit.util.MinecraftVersion;
-import com.fastasyncworldedit.core.util.TaskManager;
 import com.fastasyncworldedit.bukkit.util.PaperSupport;
+import com.fastasyncworldedit.core.util.TaskManager;
 import com.fastasyncworldedit.core.configuration.Settings;
 import com.fastasyncworldedit.core.extent.processor.PlacementStateProcessor;
 import com.fastasyncworldedit.core.extent.processor.lighting.RelighterFactory;
@@ -136,10 +136,8 @@ public class BukkitServerInterface extends AbstractPlatform implements MultiUser
 
     @Override
     public int schedule(long delay, long period, Runnable task) {
-        // TaskManager knows how to run repeating work on both a single threaded and a regionised server
-        if (delay > 0) {
-            TaskManager.taskManager().later(task, (int) Math.max(1L, delay));
-        }
+        // Repeating world work belongs to TaskManager so regionised servers get a global region task instead of a
+        // BukkitScheduler one. The only caller passes no initial delay, hence it is not carried over.
         return TaskManager.taskManager().repeat(task, (int) Math.max(1L, period));
     }
 
