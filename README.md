@@ -1,9 +1,12 @@
-# FastAsyncWorldEdit · Folia 版
+# MikuWorldEdit · Folia 版
 
 作者：JunXieX　|　MikuMC系列插件交流群：1105054380　|　基于 FastAsyncWorldEdit（GPLv3）修改，按 GPLv3 分发
 
-面向 Folia 的 FastAsyncWorldEdit 分支。上游 FAWE 默认假设"服务器只有一个主线程"，
-在 Folia 的区域化多线程下插件会被加载器跳过或直接关服；本分支把调度、区块读写与发包改造成按区域归属投递。
+插件名：`MikuWorldEdit`，产物 `MikuWorldEdit-Paper-<版本>.jar`，提供 `WorldEdit` 供其它插件依赖。
+从旧版本升级时首次启动会自动把 `plugins/FastAsyncWorldEdit/` 的内容迁移到 `plugins/MikuWorldEdit/`。
+
+上游 FAWE 默认假设"服务器只有一个主线程"，在 Folia 的区域化多线程下插件会被加载器跳过或直接关服；
+本分支把调度、区块读写与发包改造成按区域归属投递。
 
 ## 功能特性
 
