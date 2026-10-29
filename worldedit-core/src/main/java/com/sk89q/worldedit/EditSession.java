@@ -1432,6 +1432,15 @@ public class EditSession extends PassthroughExtent implements AutoCloseable {
         }
         return super.getBlock(x, y, z);
     }
+
+    @Override
+    public BlockState getBlock(final BlockVector3 position) {
+        final Extent inner = getExtent();
+        if (inner instanceof IChunkExtent<?> chunks) {
+            return chunks.getBlock(position.x(), position.y(), position.z());
+        }
+        return super.getBlock(position);
+    }
     //FAWE end
 
     @Override
