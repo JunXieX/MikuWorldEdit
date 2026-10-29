@@ -34,6 +34,10 @@ public class NMSAdapter implements FAWEPlatformAdapterImpl {
                 numPaletteEntries++;
             }
         }
+        if (numPaletteEntries == 1) {
+            // a single entry palette is written without any packed data, so the 4096 entry mapping below is unused
+            return numPaletteEntries;
+        }
         mapPalette(blockToPalette, paletteToBlock, blocksCopy, set, adapter, numPaletteEntries, globalKindaDoesNotExist);
 
         return numPaletteEntries;
@@ -68,6 +72,10 @@ public class NMSAdapter implements FAWEPlatformAdapterImpl {
                 paletteToBlock[numPaletteEntries] = ordinal;
                 numPaletteEntries++;
             }
+        }
+        if (numPaletteEntries == 1) {
+            // a single entry palette is written without any packed data, so the 4096 entry mapping below is unused
+            return numPaletteEntries;
         }
         mapPalette(blockToPalette, paletteToBlock, blocksCopy, set, adapter, numPaletteEntries, globalKindaDoesNotExist);
 

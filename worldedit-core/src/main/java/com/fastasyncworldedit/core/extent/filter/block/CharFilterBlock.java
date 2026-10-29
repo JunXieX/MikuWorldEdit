@@ -361,7 +361,9 @@ public class CharFilterBlock extends ChunkFilterBlock {
 
     @Override
     public final BlockState getBlockAbove() {
-        if (y < 16) {
+        // y is local to the section: at y == 15 the block above lives in the next section, and index + 256 would run
+        // past the 4096 entry array
+        if (y < 15) {
             return states[getArr[index + 256]];
         }
         if (layer < maxLayer) {
@@ -377,9 +379,12 @@ public class CharFilterBlock extends ChunkFilterBlock {
         final int layerAdd = newY >> 4;
         if (layerAdd == 0) {
             return states[getArr[this.index + (y << 8)]];
-        } else if ((layerAdd > 0 && layerAdd < (maxLayer - layer)) || (layerAdd < 0 && layerAdd < (minLayer - layer))) {
+        }
+        // the target layer has to stay inside [minLayer, maxLayer], not outside it
+        if (layerAdd <= (maxLayer - layer) && layerAdd >= (minLayer - layer)) {
             final int newLayer = layer + layerAdd;
-            final int index = (this.index + ((y & 15) << 8)) & 4095;
+            // the in-section offset follows the target's local y, and the x/z bits of the current position are kept
+            final int index = ((newY & 15) << 8) | (this.index & 255);
             return states[get.get(newLayer, index)];
         }
         return BlockTypes.__RESERVED__.getDefaultState();
