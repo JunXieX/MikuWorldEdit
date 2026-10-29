@@ -4,6 +4,7 @@ import com.fastasyncworldedit.core.queue.IChunk;
 import com.fastasyncworldedit.core.queue.IChunkCache;
 import com.fastasyncworldedit.core.queue.IChunkGet;
 import com.fastasyncworldedit.core.queue.implementation.SingleThreadQueueExtent;
+import com.fastasyncworldedit.core.nbt.FaweCompoundTag;
 import com.fastasyncworldedit.core.queue.implementation.chunk.ChunkHolder;
 import com.fastasyncworldedit.core.util.TaskManager;
 import com.sk89q.worldedit.WorldEditException;
@@ -28,7 +29,7 @@ import org.jetbrains.annotations.Nullable;
 
 import com.fastasyncworldedit.core.util.MathMan;
 
-import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.Collections;
@@ -150,33 +151,42 @@ public abstract class Regenerator {
     /**
      * Copies the regenerated blocks on a regionised server.
      * <p>
-     * The temporary level is not part of the regioniser: loading from it is only allowed on a thread that owns the
-     * matching chunk region, while the write into the real world belongs to that same region anyway. The two are bridged
-     * with an in-memory snapshot, so the write phase only touches plain arrays before handing the blocks to the regular,
-     * region dispatched queue.
+     * The temporary level is not part of the regioniser, so its chunks are read on this (worker) thread, one chunk at a
+     * time. Each chunk is immediately reduced to plain data - block ids, block entity NBT and biomes - and written
+     * before the next one is touched. That keeps the memory cost at one chunk regardless of the region size, and the
+     * write side still goes through the regular queue, so the actual blocks are placed by the region owning them.
      * </p>
      *
      * @param pattern pattern built for platforms with a main thread, unused here
      */
     private void copyToWorldRegionised(final Pattern pattern) {
-        final Map<Long, SourceChunk> snapshots = snapshotSource();
-        target.setBlocks(region, new SnapshotPattern(snapshots));
+        final boolean captureBiomes = options.shouldRegenBiomes();
+        final BiomeType singleBiome = options.hasBiomeType() ? options.getBiomeType() : null;
+        final BlockVector3 min = region.getMinimumPoint();
+        final BlockVector3 max = region.getMaximumPoint();
+        for (BlockVector2 chunkPos : region.getChunks()) {
+            final SourceChunk snapshot = snapshotChunk(chunkPos, captureBiomes);
+            target.setBlocks(chunkSlice(chunkPos, min, max), new SnapshotPattern(snapshot, singleBiome));
+        }
     }
 
-    private Map<Long, SourceChunk> snapshotSource() {
-        final Map<Long, SourceChunk> snapshots = new ConcurrentHashMap<>();
-        // Loading from a level that owns no region is only allowed off the tick threads, so the reads stay on the
-        // calling (worker) thread and never touch a region thread.
-        for (BlockVector2 chunkPos : region.getChunks()) {
-            snapshots.put(MathMan.pairInt(chunkPos.x(), chunkPos.z()), snapshotChunk(chunkPos));
-        }
-        return snapshots;
+    private Region chunkSlice(final BlockVector2 chunkPos, final BlockVector3 min, final BlockVector3 max) {
+        final int fromX = Math.max(min.x(), chunkPos.x() << 4);
+        final int fromZ = Math.max(min.z(), chunkPos.z() << 4);
+        final int toX = Math.min(max.x(), (chunkPos.x() << 4) + 15);
+        final int toZ = Math.min(max.z(), (chunkPos.z() << 4) + 15);
+        return new CuboidRegion(
+                region.getWorld(),
+                BlockVector3.at(fromX, min.y(), fromZ),
+                BlockVector3.at(toX, max.y(), toZ)
+        );
     }
 
     /**
-     * Reads one generated chunk into plain arrays. Must run on a ticking thread.
+     * Reads one generated chunk into plain data. Runs on the worker thread; the temporary level allows asynchronous
+     * loading from there, and none of the accessors used here need a ticking thread.
      */
-    private SourceChunk snapshotChunk(final BlockVector2 chunkPos) {
+    private SourceChunk snapshotChunk(final BlockVector2 chunkPos, final boolean captureBiomes) {
         final IChunk chunk = source.getOrCreateChunk(chunkPos.x(), chunkPos.z());
         if (!(chunk instanceof ChunkHolder<?> holder)) {
             return SourceChunk.EMPTY;
@@ -189,65 +199,107 @@ public abstract class Regenerator {
             final char[] data = get.load(layer);
             sections[layer - minSection] = data == null ? null : data.clone();
         }
+        final Map<BlockVector3, FaweCompoundTag> tiles = new HashMap<>(get.tiles());
+        BiomeType[][] biomes = null;
+        if (captureBiomes) {
+            biomes = new BiomeType[sections.length][];
+            for (int index = 0; index < sections.length; index++) {
+                if (sections[index] == null) {
+                    continue;
+                }
+                final int y = (index + minSection) << 4;
+                final BiomeType[] sectionBiomes = new BiomeType[64];
+                for (int cellY = 0; cellY < 4; cellY++) {
+                    for (int cellZ = 0; cellZ < 4; cellZ++) {
+                        for (int cellX = 0; cellX < 4; cellX++) {
+                            sectionBiomes[(cellY << 4) | (cellZ << 2) | cellX] =
+                                    get.getBiomeType(cellX << 2, y + (cellY << 2), cellZ << 2);
+                        }
+                    }
+                }
+                biomes[index] = sectionBiomes;
+            }
+        }
         runTasks(() -> true);
-        return new SourceChunk(sections, minSection);
+        return new SourceChunk(chunkPos.x(), chunkPos.z(), sections, minSection, tiles, biomes);
     }
 
     /**
-     * A generated chunk reduced to the data needed to copy it: block ids per section. Tile entities are not carried
-     * over on regionised servers, see the regeneration notes in the README.
+     * A generated chunk reduced to plain data: block ids per section, block entity NBT and (optionally) biomes.
      */
     private static final class SourceChunk {
 
-        private static final SourceChunk EMPTY = new SourceChunk(new char[0][], 0);
+        private static final SourceChunk EMPTY = new SourceChunk(0, 0, new char[0][], 0, Map.of(), null);
 
+        private final int chunkX;
+        private final int chunkZ;
         private final char[][] sections;
         private final int minSection;
+        private final Map<BlockVector3, FaweCompoundTag> tiles;
+        private final BiomeType[][] biomes;
 
-        private SourceChunk(final char[][] sections, final int minSection) {
+        private SourceChunk(
+                final int chunkX,
+                final int chunkZ,
+                final char[][] sections,
+                final int minSection,
+                final Map<BlockVector3, FaweCompoundTag> tiles,
+                final BiomeType[][] biomes
+        ) {
+            this.chunkX = chunkX;
+            this.chunkZ = chunkZ;
             this.sections = sections;
             this.minSection = minSection;
+            this.tiles = tiles;
+            this.biomes = biomes;
         }
 
-        private BlockState get(final int x, final int y, final int z) {
+        private char ordinal(final int x, final int y, final int z) {
             final int index = (y >> 4) - minSection;
             if (index < 0 || index >= sections.length) {
-                return BlockTypes.AIR.getDefaultState();
+                return BlockTypesCache.ReservedIDs.AIR;
             }
             final char[] section = sections[index];
             if (section == null) {
-                return BlockTypes.AIR.getDefaultState();
+                return BlockTypesCache.ReservedIDs.AIR;
             }
-            return BlockTypesCache.states[section[((y & 15) << 8) | ((z & 15) << 4) | (x & 15)]];
+            return section[((y & 15) << 8) | ((z & 15) << 4) | (x & 15)];
+        }
+
+        private BlockState state(final int x, final int y, final int z) {
+            return BlockTypesCache.states[ordinal(x, y, z)];
+        }
+
+        private BaseBlock block(final int x, final int y, final int z) {
+            final BlockState state = state(x, y, z);
+            final FaweCompoundTag tile = tiles.get(BlockVector3.at((chunkX << 4) + (x & 15), y, (chunkZ << 4) + (z & 15)));
+            return tile == null ? state.toBaseBlock() : state.toBaseBlock(tile.linTag());
+        }
+
+        private BiomeType biome(final int x, final int y, final int z) {
+            if (biomes == null) {
+                return null;
+            }
+            final int index = (y >> 4) - minSection;
+            if (index < 0 || index >= biomes.length || biomes[index] == null) {
+                return null;
+            }
+            return biomes[index][(((y & 15) >> 2) << 4) | ((z & 15) >> 2) << 2 | ((x & 15) >> 2)];
         }
 
     }
 
     /**
-     * Serves the snapshotted blocks; thread safe because it only ever reads plain arrays.
+     * Serves the snapshotted blocks and biomes. Only reads plain data, so it is safe on any thread.
      */
     private static final class SnapshotPattern implements Pattern {
 
-        private final Map<Long, SourceChunk> snapshots;
-        private int lastChunkX = Integer.MIN_VALUE;
-        private int lastChunkZ = Integer.MIN_VALUE;
-        private SourceChunk lastChunk;
+        private final SourceChunk snapshot;
+        private final BiomeType singleBiome;
 
-        private SnapshotPattern(final Map<Long, SourceChunk> snapshots) {
-            this.snapshots = snapshots;
-        }
-
-        private SourceChunk chunkAt(final int x, final int z) {
-            final int chunkX = x >> 4;
-            final int chunkZ = z >> 4;
-            if (chunkX == lastChunkX && chunkZ == lastChunkZ) {
-                return lastChunk;
-            }
-            final SourceChunk snapshot = snapshots.get(MathMan.pairInt(chunkX, chunkZ));
-            lastChunkX = chunkX;
-            lastChunkZ = chunkZ;
-            lastChunk = snapshot;
-            return snapshot;
+        private SnapshotPattern(final SourceChunk snapshot, final BiomeType singleBiome) {
+            this.snapshot = snapshot;
+            this.singleBiome = singleBiome;
         }
 
         @Override
@@ -257,25 +309,27 @@ public abstract class Regenerator {
 
         @Override
         public void finishChunk(final IChunk chunk) {
-            // the snapshot is looked up per position, nothing to reset
+            // nothing to reset, the snapshot is stateless
         }
 
         @Override
         public BaseBlock applyBlock(final BlockVector3 position) {
-            final SourceChunk snapshot = chunkAt(position.x(), position.z());
-            if (snapshot == null) {
-                return BlockTypes.AIR.getDefaultState().toBaseBlock();
-            }
-            return snapshot.get(position.x() & 15, position.y(), position.z() & 15).toBaseBlock();
+            return snapshot.block(position.x() & 15, position.y(), position.z() & 15);
         }
 
         @Override
         public boolean apply(final Extent extent, final BlockVector3 get, final BlockVector3 set) throws WorldEditException {
-            final SourceChunk snapshot = chunkAt(get.x(), get.z());
-            if (snapshot == null) {
-                return false;
+            final boolean placed = extent.setBlock(
+                    set.x(),
+                    set.y(),
+                    set.z(),
+                    snapshot.block(get.x() & 15, get.y(), get.z() & 15)
+            );
+            final BiomeType biome = singleBiome != null ? singleBiome : snapshot.biome(get.x() & 15, get.y(), get.z() & 15);
+            if (biome != null) {
+                extent.setBiome(set.x(), set.y(), set.z(), biome);
             }
-            return extent.setBlock(set.x(), set.y(), set.z(), snapshot.get(get.x() & 15, get.y(), get.z() & 15));
+            return placed;
         }
 
         @Override
