@@ -10,6 +10,7 @@ import com.sk89q.worldedit.bukkit.BukkitAdapter;
 import com.sk89q.worldedit.bukkit.BukkitWorld;
 import com.sk89q.worldedit.extent.Extent;
 import com.sk89q.worldedit.function.pattern.Pattern;
+import com.sk89q.worldedit.math.BlockVector2;
 import com.sk89q.worldedit.math.BlockVector3;
 import com.sk89q.worldedit.regions.Region;
 import com.sk89q.worldedit.world.RegenOptions;
@@ -103,30 +104,55 @@ public abstract class Regenerator {
 
     private void copyToWorld() {
         createSource();
+        final Pattern pattern = createPattern();
+        if (TaskManager.taskManager().isFolia()) {
+            // A regionised server has no single thread that could drive the temporary level's chunk queue, and the
+            // region threads that write the result must not read it. So the source chunks are materialised here, on
+            // this one thread, before the write starts; the write itself is queued and dispatched per region as usual.
+            preloadSource();
+            target.setBlocks(region, pattern);
+            return;
+        }
         final long timeoutPerTick = TimeUnit.MILLISECONDS.toNanos(10);
         int taskId = TaskManager.taskManager().repeat(() -> {
             final long startTime = System.nanoTime();
             runTasks(() -> System.nanoTime() - startTime < timeoutPerTick);
         }, 1);
-        //Setting Blocks
-        boolean genbiomes = options.shouldRegenBiomes();
-        boolean hasBiome = options.hasBiomeType();
-        BiomeType biome = options.getBiomeType();
-        Pattern pattern;
-        if (!genbiomes && !hasBiome) {
-            pattern = new PlacementPattern();
-        } else if (hasBiome) {
-            pattern = new WithBiomePlacementPattern((ignored1, ignored2) -> biome);
-        } else {
-            pattern = new WithBiomePlacementPattern((vec, chunk) -> {
-                if (chunk != null) {
-                    return chunk.getBiomeType(vec.x() & 15, vec.y(), vec.z() & 15);
-                }
-                return source.getBiome(vec);
-            });
-        }
         target.setBlocks(region, pattern);
         TaskManager.taskManager().cancel(taskId);
+    }
+
+    private Pattern createPattern() {
+        final boolean genbiomes = options.shouldRegenBiomes();
+        final boolean hasBiome = options.hasBiomeType();
+        final BiomeType biome = options.getBiomeType();
+        if (!genbiomes && !hasBiome) {
+            return new PlacementPattern();
+        } else if (hasBiome) {
+            return new WithBiomePlacementPattern((ignored1, ignored2) -> biome);
+        }
+        return new WithBiomePlacementPattern((vec, chunk) -> {
+            if (chunk != null) {
+                return chunk.getBiomeType(vec.x() & 15, vec.y(), vec.z() & 15);
+            }
+            return source.getBiome(vec);
+        });
+    }
+
+    /**
+     * Forces every source chunk of the region into memory on the calling thread, so that the block lookups done while
+     * writing the result never reach the (unticked) temporary level from a region thread.
+     */
+    private void preloadSource() {
+        for (BlockVector2 chunkPos : region.getChunks()) {
+            final IChunk chunk = source.getOrCreateChunk(chunkPos.x(), chunkPos.z());
+            final IChunkGet get = chunk.getOrCreateGet();
+            for (int layer = get.getMinSectionPosition(); layer <= get.getMaxSectionPosition(); layer++) {
+                get.load(layer);
+            }
+            runTasks(() -> true);
+        }
+        source.flush();
     }
 
     private abstract class ChunkwisePattern implements Pattern {

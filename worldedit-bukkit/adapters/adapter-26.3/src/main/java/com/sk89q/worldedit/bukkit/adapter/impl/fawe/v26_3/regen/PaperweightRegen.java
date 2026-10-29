@@ -100,11 +100,8 @@ public class PaperweightRegen extends Regenerator {
 
     @Override
     protected void runTasks(final BooleanSupplier shouldKeepTicking) {
-        if (TaskManager.taskManager().isFolia()) {
-            // Regionised servers never drive chunk generation through a pollable main thread queue, so this per tick
-            // progress loop cannot make progress there.
-            return;
-        }
+        // The temporary level is private to this regeneration and is never ticked, so its chunk queue has to be pumped
+        // from the calling thread on every platform.
         while (shouldKeepTicking.getAsBoolean()) {
             if (!this.freshWorld.getChunkSource().pollTask()) {
                 return;
@@ -121,10 +118,6 @@ public class PaperweightRegen extends Regenerator {
 
     @Override
     protected boolean initNewWorld() throws Exception {
-        if (TaskManager.taskManager().isFolia()) {
-            throw new UnsupportedOperationException(
-                    "Regeneration is not supported on regionised servers: a world cannot be created outside the level loader");
-        }
         if (!PaperSupport.isPaper()) {
             throw new UnsupportedOperationException("Regen requires Paper");
         }
