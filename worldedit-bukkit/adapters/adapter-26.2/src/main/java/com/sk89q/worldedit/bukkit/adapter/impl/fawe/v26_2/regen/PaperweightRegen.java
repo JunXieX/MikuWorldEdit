@@ -121,10 +121,6 @@ public class PaperweightRegen extends Regenerator {
 
     @Override
     protected boolean initNewWorld() throws Exception {
-        if (TaskManager.taskManager().isFolia()) {
-            throw new UnsupportedOperationException(
-                    "Regeneration is not supported on regionised servers: a world cannot be created outside the level loader");
-        }
         if (!PaperSupport.isPaper()) {
             throw new UnsupportedOperationException("Regen requires Paper");
         }
