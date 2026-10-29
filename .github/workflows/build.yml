@@ -61,11 +61,21 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # the release notes are the body of the commit the tag points at
-          git log -1 --pretty=%B '${{ github.ref_name }}' > notes.md
-          if [ ! -s notes.md ]; then
-            echo "发布 ${{ github.ref_name }}" > notes.md
+          VERSION=$(grep -m1 rootVersion gradle.properties | cut -d= -f2)
+          if [ "v$VERSION" != "${{ github.ref_name }}" ]; then
+            echo "tag ${{ github.ref_name }} does not match version $VERSION" >&2
+            exit 1
           fi
-          gh release create '${{ github.ref_name }}' dist/*.jar \
-            --title '${{ github.ref_name }}' \
+          if gh release view "${{ github.ref_name }}" >/dev/null 2>&1; then
+            echo "release ${{ github.ref_name }} already exists"
+            exit 0
+          fi
+          # release notes are the body of the commit the tag points at
+          git log -1 --pretty=%B "${{ github.ref_name }}" > notes.md
+          if [ ! -s notes.md ]; then
+            echo "release commit has no body" >&2
+            exit 1
+          fi
+          gh release create "${{ github.ref_name }}" dist/*.jar \
+            --title "${{ github.ref_name }}" \
             --notes-file notes.md

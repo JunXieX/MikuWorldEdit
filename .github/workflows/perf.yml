@@ -1,0 +1,191 @@
+name: Performance
+
+on:
+  workflow_dispatch:
+    inputs:
+      size:
+        description: 'Edge length of the benchmarked cuboid'
+        required: false
+        default: '96'
+      runs:
+        description: 'Measured runs (3 warmup runs always run first)'
+        required: false
+        default: '5'
+      adapters:
+        description: 'Adapter subset for the build, empty builds every adapter'
+        required: false
+        default: '26.3'
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 25
+          cache: gradle
+      - uses: gradle/actions/setup-gradle@v5
+
+      - name: Build plugin
+        env:
+          ADAPTERS: ${{ inputs.adapters }}
+        run: |
+          ARGS=":worldedit-bukkit:shadowJar --no-daemon -Dorg.gradle.jvmargs=-Xmx4g"
+          if [ -n "$ADAPTERS" ]; then ARGS="$ARGS -Padapters=$ADAPTERS"; fi
+          ./gradlew $ARGS
+
+      - name: Server fixture
+        run: |
+          BUILD=$(curl -fsSL https://fill.papermc.io/v3/projects/folia/versions/26.3/builds | jq -r 'sort_by(.build) | last | .build')
+          URL=$(curl -fsSL "https://fill.papermc.io/v3/projects/folia/versions/26.3/builds/$BUILD" | jq -r '.downloads["server:default"].url')
+          mkdir -p bench/server/plugins
+          curl -fsSL "$URL" -o bench/server/folia.jar
+          echo "eula=true" > bench/server/eula.txt
+          printf '%s\n'             'online-mode=false' 'level-name=world' 'level-type=minecraft:flat' 'server-port=25599' \
+            'max-players=1' 'view-distance=4' 'simulation-distance=4' 'spawn-protection=0' \
+            'enable-rcon=false' 'difficulty=peaceful' 'generate-structures=false' > bench/server/server.properties
+
+      - name: Harness fixture
+        run: |
+          mkdir -p bench/src/dev/junxiex/faweperf bench/out
+          cat > bench/src/dev/junxiex/faweperf/PerfPlugin.java <<'JAVA'
+          package dev.junxiex.faweperf;
+
+          import com.sk89q.worldedit.EditSession;
+          import com.sk89q.worldedit.WorldEdit;
+          import com.sk89q.worldedit.bukkit.BukkitAdapter;
+          import com.sk89q.worldedit.function.pattern.BlockPattern;
+          import com.sk89q.worldedit.function.pattern.Pattern;
+          import com.sk89q.worldedit.math.BlockVector3;
+          import com.sk89q.worldedit.regions.CuboidRegion;
+          import com.sk89q.worldedit.regions.Region;
+          import com.sk89q.worldedit.world.World;
+          import com.sk89q.worldedit.world.block.BlockTypes;
+          import org.bukkit.Bukkit;
+          import org.bukkit.command.Command;
+          import org.bukkit.command.CommandSender;
+          import org.bukkit.plugin.java.JavaPlugin;
+
+          public final class PerfPlugin extends JavaPlugin {
+
+              @Override
+              public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+                  if (!command.getName().equalsIgnoreCase("mwetest") || args.length < 2) {
+                      return false;
+                  }
+                  run(Integer.parseInt(args[0]), Integer.parseInt(args[1]));
+                  return true;
+              }
+
+              private void run(int size, int offsetX) {
+                  org.bukkit.World bukkitWorld = Bukkit.getWorld("world");
+                  if (bukkitWorld == null) {
+                      getLogger().warning("PERF FAIL no world");
+                      return;
+                  }
+                  Bukkit.getAsyncScheduler().runNow(this, task -> {
+                      World world = BukkitAdapter.adapt(bukkitWorld);
+                      Region region = new CuboidRegion(
+                              world,
+                              BlockVector3.at(offsetX, 64, 0),
+                              BlockVector3.at(offsetX + size - 1, 64 + size - 1, size - 1)
+                      );
+                      Pattern pattern = new BlockPattern(BlockTypes.STONE.getDefaultState());
+                      long start = System.currentTimeMillis();
+                      long applyMs = -1;
+                      long closeMs = -1;
+                      String failure = null;
+                      try (EditSession session = WorldEdit.getInstance().newEditSessionBuilder().world(world).build()) {
+                          session.setBlocks(region, pattern);
+                          applyMs = System.currentTimeMillis() - start;
+                          long closeStart = System.currentTimeMillis();
+                          session.close();
+                          closeMs = System.currentTimeMillis() - closeStart;
+                      } catch (Throwable t) {
+                          failure = String.valueOf(t);
+                      }
+                      getLogger().info("MWETEST RESULT size=" + size + " offset=" + offsetX
+                              + " applyMs=" + applyMs + " closeMs=" + closeMs
+                              + " totalMs=" + (System.currentTimeMillis() - start)
+                              + (failure == null ? "" : " failure=" + failure));
+                  });
+              }
+          }
+          JAVA
+          printf 'name: FawePerf\nversion: 1.0.0\nmain: dev.junxiex.faweperf.PerfPlugin\napi-version: "1.21"\nfolia-supported: true\n' > bench/out/plugin.yml
+
+      - name: Compile harness
+        run: |
+          FAWE=$(ls worldedit-bukkit/build/libs/FastAsyncWorldEdit-Paper-*.jar | head -1)
+          CP="$FAWE"
+          for pattern in 'paper-api-*.jar' 'adventure-api-*.jar' 'adventure-key-*.jar' 'examination-api-*.jar' 'guava-3*.jar'; do
+            jar=$(find ~/.gradle/caches/modules-2 -name "$pattern" | head -1)
+            if [ -n "$jar" ]; then CP="$CP:$jar"; fi
+          done
+          javac -nowarn -cp "$CP" -d bench/out bench/src/dev/junxiex/faweperf/PerfPlugin.java
+          (cd bench/out && jar --create --file ../perf.jar .)
+
+      - name: Run benchmark
+        env:
+          SIZE: ${{ inputs.size }}
+          RUNS: ${{ inputs.runs }}
+        run: |
+          FAWE=$(ls worldedit-bukkit/build/libs/FastAsyncWorldEdit-Paper-*.jar | head -1)
+          cp "$FAWE" bench/server/plugins/fawe.jar
+          cp bench/perf.jar bench/server/plugins/perf.jar
+          cd bench/server
+          mkfifo console.in
+          java -Xms2G -Xmx3G -jar folia.jar --nogui < console.in > console.out 2>&1 &
+          SERVER_PID=$!
+          exec 3> console.in
+          for _ in $(seq 1 240); do
+            grep -q "Done (" logs/latest.log 2>/dev/null && break
+            kill -0 $SERVER_PID 2>/dev/null || { echo "server died during startup"; tail -n 80 console.out; exit 1; }
+            sleep 1
+          done
+          for i in 1 2 3; do
+            echo "mwetest $SIZE $((i * 1000))" >&3
+            sleep 5
+          done
+          for i in $(seq 1 "$RUNS"); do
+            echo "mwetest $SIZE $(((i + 3) * 1000))" >&3
+            sleep 5
+          done
+          echo "stop" >&3
+          exec 3>&-
+          wait $SERVER_PID || true
+          {
+            echo "| run | apply ms | close ms | total ms |"
+            echo "| --- | --- | --- | --- |"
+            grep "MWETEST RESULT" logs/latest.log | tail -n "$RUNS" |
+              sed -E 's/.*offset=([0-9]+) applyMs=([0-9-]+) closeMs=([0-9-]+) totalMs=([0-9]+).*/| \1 | \2 | \3 | \4 |/'
+          } > ../result.md
+          cat ../result.md
+
+      - name: Publish summary
+        if: always()
+        run: |
+          {
+            echo "### FAWE performance run"
+            echo ""
+            echo "Version: $(grep -m1 rootVersion gradle.properties | cut -d= -f2)"
+            echo "Cuboid: ${{ inputs.size }}³, measured runs: ${{ inputs.runs }}"
+            echo ""
+            cat bench/result.md 2>/dev/null || echo "no results"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: perf-log
+          path: |
+            bench/server/logs/latest.log
+            bench/result.md
+          if-no-files-found: warn
