@@ -18,12 +18,19 @@ import com.sk89q.worldedit.regions.Region;
 import com.sk89q.worldedit.world.RegenOptions;
 import com.sk89q.worldedit.world.biome.BiomeType;
 import com.sk89q.worldedit.world.block.BaseBlock;
+import com.sk89q.worldedit.world.block.BlockState;
+import com.sk89q.worldedit.world.block.BlockTypes;
+import com.sk89q.worldedit.world.block.BlockTypesCache;
 import org.bukkit.generator.BiomeProvider;
 import org.bukkit.generator.WorldInfo;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import com.fastasyncworldedit.core.util.MathMan;
+
 import java.util.ArrayList;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -143,16 +150,22 @@ public abstract class Regenerator {
     /**
      * Copies the regenerated blocks on a regionised server.
      * <p>
-     * The temporary level is not part of the regioniser, so several of its accessors refuse to run outside a ticking
-     * thread. The copy therefore runs on the global region thread, one chunk at a time, and yields between chunks so the
-     * server keeps ticking. The block writes still go through the regular queue and are dispatched per region, so only
-     * the reads happen here.
+     * The temporary level is not part of the regioniser: reading it needs a ticking thread, while writing into the real
+     * world has to happen on each chunk's own region thread. The two are bridged with an in-memory snapshot - the source
+     * chunks are read on the global region thread (in small slices, so the server keeps ticking), and the write phase
+     * then only touches plain arrays before handing the blocks to the regular, region dispatched queue.
      * </p>
+     *
+     * @param pattern pattern built for platforms with a main thread, unused here
      */
     private void copyToWorldRegionised(final Pattern pattern) {
+        final Map<Long, SourceChunk> snapshots = snapshotSource();
+        target.setBlocks(region, new SnapshotPattern(snapshots));
+    }
+
+    private Map<Long, SourceChunk> snapshotSource() {
         final List<BlockVector2> chunks = new ArrayList<>(region.getChunks());
-        final BlockVector3 min = region.getMinimumPoint();
-        final BlockVector3 max = region.getMaximumPoint();
+        final Map<Long, SourceChunk> snapshots = new ConcurrentHashMap<>();
         final CompletableFuture<Void> done = new CompletableFuture<>();
         final int[] next = {0};
         final int[] taskId = {-1};
@@ -161,10 +174,9 @@ public abstract class Regenerator {
                 final long start = System.nanoTime();
                 while (next[0] < chunks.size()) {
                     final BlockVector2 chunkPos = chunks.get(next[0]++);
-                    preloadChunk(chunkPos);
-                    target.setBlocks(chunkSlice(chunkPos, min, max), pattern);
+                    snapshots.put(MathMan.pairInt(chunkPos.x(), chunkPos.z()), snapshotChunk(chunkPos));
                     if (System.nanoTime() - start >= TimeUnit.MILLISECONDS.toNanos(5)) {
-                        // give the tick back, the rest runs a tick later
+                        // give the tick back, the rest of the chunks are read on the next one
                         return;
                     }
                 }
@@ -183,28 +195,105 @@ public abstract class Regenerator {
         } catch (ExecutionException e) {
             throw new RuntimeException(e.getCause());
         }
+        return snapshots;
     }
 
     /**
-     * Materialises one source chunk so the block lookups do not have to re-enter the temporary level.
+     * Reads one generated chunk into plain arrays. Must run on a ticking thread.
      */
-    private void preloadChunk(final BlockVector2 chunkPos) {
+    private SourceChunk snapshotChunk(final BlockVector2 chunkPos) {
         final IChunk chunk = source.getOrCreateChunk(chunkPos.x(), chunkPos.z());
-        if (chunk instanceof ChunkHolder<?> holder) {
-            final IChunkGet get = holder.getOrCreateGet();
-            for (int layer = get.getMinSectionPosition(); layer <= get.getMaxSectionPosition(); layer++) {
-                get.load(layer);
-            }
+        if (!(chunk instanceof ChunkHolder<?> holder)) {
+            return SourceChunk.EMPTY;
+        }
+        final IChunkGet get = holder.getOrCreateGet();
+        final int minSection = get.getMinSectionPosition();
+        final int maxSection = get.getMaxSectionPosition();
+        final char[][] sections = new char[maxSection - minSection + 1][];
+        for (int layer = minSection; layer <= maxSection; layer++) {
+            final char[] data = get.load(layer);
+            sections[layer - minSection] = data == null ? null : data.clone();
         }
         runTasks(() -> true);
+        return new SourceChunk(sections, minSection);
     }
 
-    private Region chunkSlice(final BlockVector2 chunkPos, final BlockVector3 min, final BlockVector3 max) {
-        final int fromX = Math.max(min.x(), chunkPos.x() << 4);
-        final int fromZ = Math.max(min.z(), chunkPos.z() << 4);
-        final int toX = Math.min(max.x(), (chunkPos.x() << 4) + 15);
-        final int toZ = Math.min(max.z(), (chunkPos.z() << 4) + 15);
-        return new CuboidRegion(region.getWorld(), BlockVector3.at(fromX, min.y(), fromZ), BlockVector3.at(toX, max.y(), toZ));
+    /**
+     * A generated chunk reduced to the data needed to copy it: block ids per section. Tile entities are not carried
+     * over on regionised servers, see the regeneration notes in the README.
+     */
+    private static final class SourceChunk {
+
+        private static final SourceChunk EMPTY = new SourceChunk(new char[0][], 0);
+
+        private final char[][] sections;
+        private final int minSection;
+
+        private SourceChunk(final char[][] sections, final int minSection) {
+            this.sections = sections;
+            this.minSection = minSection;
+        }
+
+        private BlockState get(final int x, final int y, final int z) {
+            final int index = (y >> 4) - minSection;
+            if (index < 0 || index >= sections.length) {
+                return BlockTypes.AIR.getDefaultState();
+            }
+            final char[] section = sections[index];
+            if (section == null) {
+                return BlockTypes.AIR.getDefaultState();
+            }
+            return BlockTypesCache.states[section[((y & 15) << 8) | ((z & 15) << 4) | (x & 15)]];
+        }
+
+    }
+
+    /**
+     * Serves the snapshotted blocks; thread safe because it only ever reads plain arrays.
+     */
+    private static final class SnapshotPattern implements Pattern {
+
+        private final Map<Long, SourceChunk> snapshots;
+        private SourceChunk current;
+
+        private SnapshotPattern(final Map<Long, SourceChunk> snapshots) {
+            this.snapshots = snapshots;
+        }
+
+        @Override
+        public <T extends IChunk> T applyChunk(final T chunk, final Region region) {
+            this.current = snapshots.get(MathMan.pairInt(chunk.getX(), chunk.getZ()));
+            return chunk;
+        }
+
+        @Override
+        public void finishChunk(final IChunk chunk) {
+            this.current = null;
+        }
+
+        @Override
+        public BaseBlock applyBlock(final BlockVector3 position) {
+            final SourceChunk snapshot = current;
+            if (snapshot == null) {
+                return BlockTypes.AIR.getDefaultState().toBaseBlock();
+            }
+            return snapshot.get(position.x() & 15, position.y(), position.z() & 15).toBaseBlock();
+        }
+
+        @Override
+        public boolean apply(final Extent extent, final BlockVector3 get, final BlockVector3 set) throws WorldEditException {
+            final SourceChunk snapshot = current;
+            if (snapshot == null) {
+                return false;
+            }
+            return extent.setBlock(set.x(), set.y(), set.z(), snapshot.get(get.x() & 15, get.y(), get.z() & 15));
+        }
+
+        @Override
+        public Pattern fork() {
+            return this;
+        }
+
     }
 
     private abstract class ChunkwisePattern implements Pattern {
