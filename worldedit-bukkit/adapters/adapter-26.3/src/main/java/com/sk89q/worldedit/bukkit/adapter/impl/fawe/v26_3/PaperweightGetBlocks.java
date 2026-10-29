@@ -527,14 +527,11 @@ public class PaperweightGetBlocks extends AbstractBukkitGetBlocks<ServerLevel, L
                             } else if (existingSection != getSections(false)[getSectionIndex]) {
                                 this.sections[getSectionIndex] = existingSection;
                                 this.reset();
-                            } else if (!Arrays.equals(
-                                    update(getSectionIndex, new char[4096], true),
-                                    load(layerNo)
-                            )) {
-                                this.reset(layerNo);
-                        /*} else if (lock.isModified()) {
-                            this.reset(layerNo);*/
                             }
+                            // The cached read array for this layer is refreshed by updateGet below, so unpacking the
+                            // existing section just to compare it first was pure overhead (one 4096 char array and one
+                            // full palette read per section). A failed section swap is the only case that needs the
+                            // old cache dropped, and that is handled where the swap is checked.
                         } finally {
                             sectionLock.writeLock().unlock();
                         }
@@ -565,6 +562,7 @@ public class PaperweightGetBlocks extends AbstractBukkitGetBlocks<ServerLevel, L
                             LOGGER.error("Skipping invalid null section. chunk: {}, {} layer: {}", chunkX, chunkZ,
                                     getSectionIndex
                             );
+                            this.reset(layerNo);
                         } else {
                             updateGet(nmsChunk, levelChunkSections, newSection, setArr, getSectionIndex);
                         }
