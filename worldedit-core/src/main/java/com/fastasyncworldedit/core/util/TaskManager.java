@@ -404,16 +404,6 @@ public abstract class TaskManager {
     }
 
     /**
-     * Whether the current thread may run work that is not tied to any location (game rules, broadcasts, plugin
-     * bookkeeping).
-     *
-     * @return true when the current thread may run global work
-     */
-    public boolean isGlobalTickThread() {
-        return Fawe.isMainThread();
-    }
-
-    /**
      * Whether the current thread owns the region containing the given chunk, and may therefore read or write that
      * chunk's world state without a hop.
      *
@@ -481,27 +471,6 @@ public abstract class TaskManager {
     }
 
     /**
-     * Run a task on the thread owning the region of the given chunk.
-     *
-     * @param world    world of the chunk, may be null when unknown
-     * @param chunkX   chunk X coordinate
-     * @param chunkZ   chunk Z coordinate
-     * @param runnable task to run
-     * @return future completed once the task ran
-     */
-    public CompletableFuture<Void> submitAt(
-            @Nullable final World world,
-            final int chunkX,
-            final int chunkZ,
-            @Nonnull final Runnable runnable
-    ) {
-        return submitAt(world, chunkX, chunkZ, () -> {
-            runnable.run();
-            return null;
-        });
-    }
-
-    /**
      * Run work that is not tied to any location on the server's global tick thread.
      *
      * @param runnable task to run
@@ -510,13 +479,5 @@ public abstract class TaskManager {
         task(runnable);
     }
 
-    /**
-     * Run work that never touches world state on a worker thread.
-     *
-     * @param runnable task to run
-     */
-    public void executeAsync(@Nonnull final Runnable runnable) {
-        async(runnable);
-    }
 
 }

@@ -1,7 +1,6 @@
 package com.fastasyncworldedit.bukkit.util;
 
 import com.fastasyncworldedit.core.Fawe;
-import com.fastasyncworldedit.core.configuration.Settings;
 import com.fastasyncworldedit.core.util.TaskManager;
 import com.fastasyncworldedit.core.wrappers.WorldWrapper;
 import com.sk89q.worldedit.bukkit.BukkitAdapter;
@@ -62,15 +61,6 @@ public class BukkitTaskManager extends TaskManager {
         }
         // Folia reports true for every tick thread here (the global region thread and all region threads), while the
         // async pools report false. Region ownership still has to be checked with ownsRegion.
-        return Bukkit.isPrimaryThread();
-    }
-
-    @Override
-    public boolean isGlobalTickThread() {
-        if (!this.folia) {
-            return Fawe.isMainThread();
-        }
-        // every tick thread, the global region included, reports true here
         return Bukkit.isPrimaryThread();
     }
 
@@ -186,11 +176,11 @@ public class BukkitTaskManager extends TaskManager {
             this.plugin.getServer().getScheduler().runTaskLater(this.plugin, runnable, delay);
             return;
         }
-        track(Bukkit.getGlobalRegionScheduler().runDelayed(
-                this.plugin,
-                task -> runnable.run(),
-                Math.max(1L, delay)
-        ));
+        final int[] id = {-1};
+        id[0] = track(Bukkit.getGlobalRegionScheduler().runDelayed(this.plugin, task -> {
+            SCHEDULED_TASKS.remove(id[0]);
+            runnable.run();
+        }, Math.max(1L, delay)));
     }
 
     @Override
@@ -199,12 +189,11 @@ public class BukkitTaskManager extends TaskManager {
             this.plugin.getServer().getScheduler().runTaskLaterAsynchronously(this.plugin, runnable, delay);
             return;
         }
-        track(Bukkit.getAsyncScheduler().runDelayed(
-                this.plugin,
-                task -> runnable.run(),
-                Math.max(1L, delay) * 50L,
-                TimeUnit.MILLISECONDS
-        ));
+        final int[] id = {-1};
+        id[0] = track(Bukkit.getAsyncScheduler().runDelayed(this.plugin, task -> {
+            SCHEDULED_TASKS.remove(id[0]);
+            runnable.run();
+        }, Math.max(1L, delay) * 50L, TimeUnit.MILLISECONDS));
     }
 
     @Override
@@ -263,8 +252,11 @@ public class BukkitTaskManager extends TaskManager {
         });
         try {
             return future.get();
-        } catch (InterruptedException | ExecutionException e) {
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
             throw new RuntimeException(e);
+        } catch (ExecutionException e) {
+            throw new RuntimeException(e.getCause());
         }
     }
 

@@ -27,15 +27,10 @@ import org.bukkit.generator.WorldInfo;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import com.fastasyncworldedit.core.util.MathMan;
-
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiFunction;
 import java.util.function.BooleanSupplier;
@@ -117,11 +112,11 @@ public abstract class Regenerator {
 
     private void copyToWorld() {
         createSource();
-        final Pattern pattern = createPattern();
         if (TaskManager.taskManager().isFolia()) {
-            copyToWorldRegionised(pattern);
+            copyToWorldRegionised();
             return;
         }
+        final Pattern pattern = createPattern();
         final long timeoutPerTick = TimeUnit.MILLISECONDS.toNanos(10);
         int taskId = TaskManager.taskManager().repeat(() -> {
             final long startTime = System.nanoTime();
@@ -157,15 +152,18 @@ public abstract class Regenerator {
      * write side still goes through the regular queue, so the actual blocks are placed by the region owning them.
      * </p>
      *
-     * @param pattern pattern built for platforms with a main thread, unused here
      */
-    private void copyToWorldRegionised(final Pattern pattern) {
+    private void copyToWorldRegionised() {
         final boolean captureBiomes = options.shouldRegenBiomes();
         final BiomeType singleBiome = options.hasBiomeType() ? options.getBiomeType() : null;
         final BlockVector3 min = region.getMinimumPoint();
         final BlockVector3 max = region.getMaximumPoint();
         for (BlockVector2 chunkPos : region.getChunks()) {
             final SourceChunk snapshot = snapshotChunk(chunkPos, captureBiomes);
+            if (snapshot == SourceChunk.EMPTY) {
+                // the source queue refused the chunk (outside the safe range), nothing to copy
+                continue;
+            }
             target.setBlocks(chunkSlice(chunkPos, min, max), new SnapshotPattern(snapshot, singleBiome));
         }
     }
@@ -220,7 +218,6 @@ public abstract class Regenerator {
                 biomes[index] = sectionBiomes;
             }
         }
-        runTasks(() -> true);
         return new SourceChunk(chunkPos.x(), chunkPos.z(), sections, minSection, tiles, biomes);
     }
 
