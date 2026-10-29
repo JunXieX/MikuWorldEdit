@@ -6,6 +6,7 @@ import com.fastasyncworldedit.core.Fawe;
 import com.fastasyncworldedit.core.queue.IChunkCache;
 import com.fastasyncworldedit.core.queue.IChunkGet;
 import com.fastasyncworldedit.core.queue.implementation.chunk.ChunkCache;
+import com.fastasyncworldedit.core.util.TaskManager;
 import com.google.common.collect.ImmutableList;
 import com.sk89q.worldedit.bukkit.BukkitAdapter;
 import com.sk89q.worldedit.bukkit.WorldEditPlugin;
@@ -99,6 +100,11 @@ public class PaperweightRegen extends Regenerator {
 
     @Override
     protected void runTasks(final BooleanSupplier shouldKeepTicking) {
+        if (TaskManager.taskManager().isFolia()) {
+            // Regionised servers never drive chunk generation through a pollable main thread queue, so this per tick
+            // progress loop cannot make progress there.
+            return;
+        }
         while (shouldKeepTicking.getAsBoolean()) {
             if (!this.freshWorld.getChunkSource().pollTask()) {
                 return;
@@ -115,6 +121,10 @@ public class PaperweightRegen extends Regenerator {
 
     @Override
     protected boolean initNewWorld() throws Exception {
+        if (TaskManager.taskManager().isFolia()) {
+            throw new UnsupportedOperationException(
+                    "Regeneration is not supported on regionised servers: a world cannot be created outside the level loader");
+        }
         if (!PaperSupport.isPaper()) {
             throw new UnsupportedOperationException("Regen requires Paper");
         }
@@ -152,7 +162,7 @@ public class PaperweightRegen extends Regenerator {
                 .resolve(LevelResource.DATA.id()), server.getFixerUpper(), server.registryAccess());
 
         //init world
-        freshWorld = Fawe.instance().getQueueHandler().sync((Supplier<ServerLevel>) () -> new ServerLevel(
+        freshWorld = TaskManager.taskManager().submitAt(null, 0, 0, (Supplier<ServerLevel>) () -> new ServerLevel(
                 server,
                 Util.backgroundExecutor(),
                 session,
@@ -216,14 +226,19 @@ public class PaperweightRegen extends Regenerator {
 
     @Override
     protected void cleanup() {
-        try {
-            session.close();
-        } catch (Exception ignored) {
+        if (session != null) {
+            try {
+                session.close();
+            } catch (Exception ignored) {
+            }
         }
 
         //shutdown chunk provider
         try {
-            Fawe.instance().getQueueHandler().sync(() -> {
+            TaskManager.taskManager().executeGlobal(() -> {
+                if (freshWorld == null) {
+                    return;
+                }
                 try {
                     freshWorld.getChunkSource().getDataStorage().cache.clear();
                     freshWorld.getChunkSource().close(false);
@@ -236,7 +251,7 @@ public class PaperweightRegen extends Regenerator {
 
         //remove world from server
         try {
-            Fawe.instance().getQueueHandler().sync(this::removeWorldFromWorldsMap);
+            TaskManager.taskManager().executeGlobal(this::removeWorldFromWorldsMap);
         } catch (Exception ignored) {
         }
 

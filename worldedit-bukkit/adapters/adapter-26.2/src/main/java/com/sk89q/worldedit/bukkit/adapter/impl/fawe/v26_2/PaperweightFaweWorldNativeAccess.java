@@ -1,5 +1,6 @@
 package com.sk89q.worldedit.bukkit.adapter.impl.fawe.v26_2;
 
+import com.fastasyncworldedit.bukkit.util.PaperSupport;
 import com.fastasyncworldedit.core.Fawe;
 import com.fastasyncworldedit.core.math.IntPair;
 import com.fastasyncworldedit.core.util.TaskManager;
@@ -21,6 +22,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.redstone.ExperimentalRedstoneUtils;
 import net.minecraft.world.level.storage.ValueInput;
+import org.bukkit.Bukkit;
 import org.bukkit.craftbukkit.CraftWorld;
 import org.bukkit.craftbukkit.block.data.CraftBlockData;
 import org.bukkit.event.block.BlockPhysicsEvent;
@@ -61,7 +63,7 @@ public class PaperweightFaweWorldNativeAccess implements WorldNativeAccess<Level
         this.level = level;
         // Use the actual tick as minecraft-defined so we don't try to force blocks into the world when the server's already lagging.
         //  - With the caveat that we don't want to have too many cached changed (1024) so we'd flush those at 1024 anyway.
-        this.lastTick = new AtomicInteger(MinecraftServer.currentTick);
+        this.lastTick = new AtomicInteger(currentTick());
     }
 
     private Level getLevel() {
@@ -97,8 +99,10 @@ public class PaperweightFaweWorldNativeAccess implements WorldNativeAccess<Level
             LevelChunk levelChunk, BlockPos blockPos,
             net.minecraft.world.level.block.state.BlockState blockState
     ) {
-        int currentTick = MinecraftServer.currentTick;
-        if (Fawe.isMainThread()) {
+        int currentTick = currentTick();
+        if (Fawe.isMainThread() || PaperSupport.isFolia()) {
+            // Regionised servers already call this on the thread owning the chunk, so side effects can be applied right
+            // away instead of being parked for the next main thread tick.
             return levelChunk.setBlockState(blockPos, blockState,
                     this.sideEffectSet.shouldApply(SideEffect.UPDATE) ? 0 : 512
             );
@@ -276,13 +280,28 @@ public class PaperweightFaweWorldNativeAccess implements WorldNativeAccess<Level
                 }
             }
         };
-        if (Fawe.isMainThread()) {
+        if (Fawe.isMainThread() || PaperSupport.isFolia()) {
             runnableVal.run();
         } else {
             TaskManager.taskManager().sync(runnableVal);
         }
         cachedChanges.clear();
         cachedChunksToSend.clear();
+    }
+
+    /**
+     * The server tick. {@code MinecraftServer.currentTick} is not present on regionised servers, so it is only read
+     * there where it exists.
+     */
+    private static int currentTick() {
+        if (PaperSupport.isFolia()) {
+            try {
+                return Bukkit.getCurrentTick();
+            } catch (Throwable ignored) {
+                return (int) (System.currentTimeMillis() / 50L);
+            }
+        }
+        return MinecraftServer.currentTick;
     }
 
     private record CachedChange(
