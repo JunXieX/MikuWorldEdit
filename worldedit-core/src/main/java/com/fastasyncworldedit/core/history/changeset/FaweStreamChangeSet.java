@@ -158,6 +158,7 @@ public abstract class FaweStreamChangeSet extends AbstractChangeSet {
                 int lx;
                 int ly;
                 int lz;
+                final byte[] writeBuffer = new byte[4];
 
                 @Override
                 public void write(OutputStream out, int x, int y, int z) throws IOException {
@@ -167,16 +168,14 @@ public abstract class FaweStreamChangeSet extends AbstractChangeSet {
                     int rx = -lx + (lx = x);
                     int ry = -ly + (ly = y);
                     int rz = -lz + (lz = z);
-                    byte b1 = (byte) (ry);
-                    byte b2 = (byte) (rx);
-                    byte b3 = (byte) (rz);
                     int x16 = (rx >> 8) & 0xF;
                     int z16 = (rz >> 8) & 0xF;
-                    byte b4 = MathMan.pair16(x16, z16);
-                    out.write(b1);
-                    out.write(b2);
-                    out.write(b3);
-                    out.write(b4);
+                    final byte[] buf = writeBuffer;
+                    buf[0] = (byte) (ry);
+                    buf[1] = (byte) (rx);
+                    buf[2] = (byte) (rz);
+                    buf[3] = MathMan.pair16(x16, z16);
+                    out.write(buf, 0, 4);
                 }
 
                 final byte[] buffer = new byte[4];
@@ -200,6 +199,8 @@ public abstract class FaweStreamChangeSet extends AbstractChangeSet {
         } else {
             posDel = new FaweStreamPositionDelegate() {
                 final byte[] buffer = new byte[6];
+                // magic (6) + absolute x/z (8) + relative x/y/z (6)
+                final byte[] writeBuffer = new byte[20];
                 int lx;
                 int ly;
                 int lz;
@@ -210,25 +211,29 @@ public abstract class FaweStreamChangeSet extends AbstractChangeSet {
                     int ry = -ly + (ly = y);
                     int rz = -lz + (lz = z);
                     // Use LE/GE to ensure we don't accidentally write MAGIC_NEW_RELATIVE
+                    final byte[] buf = writeBuffer;
+                    int len = 0;
                     if (rx >= Short.MAX_VALUE || rz >= Short.MAX_VALUE || rx <= Short.MIN_VALUE || rz <= Short.MIN_VALUE) {
-                        stream.write(MAGIC_NEW_RELATIVE);
-                        stream.write((byte) (x >> 24));
-                        stream.write((byte) (x >> 16));
-                        stream.write((byte) (x >> 8));
-                        stream.write((byte) (x));
-                        stream.write((byte) (z >> 24));
-                        stream.write((byte) (z >> 16));
-                        stream.write((byte) (z >> 8));
-                        stream.write((byte) (z));
+                        System.arraycopy(MAGIC_NEW_RELATIVE, 0, buf, 0, MAGIC_NEW_RELATIVE.length);
+                        len = MAGIC_NEW_RELATIVE.length;
+                        buf[len++] = (byte) (x >> 24);
+                        buf[len++] = (byte) (x >> 16);
+                        buf[len++] = (byte) (x >> 8);
+                        buf[len++] = (byte) (x);
+                        buf[len++] = (byte) (z >> 24);
+                        buf[len++] = (byte) (z >> 16);
+                        buf[len++] = (byte) (z >> 8);
+                        buf[len++] = (byte) (z);
                         rx = 0;
                         rz = 0;
                     }
-                    stream.write((rx) & 0xff);
-                    stream.write(((rx) >> 8) & 0xff);
-                    stream.write((rz) & 0xff);
-                    stream.write(((rz) >> 8) & 0xff);
-                    stream.write((ry) & 0xff);
-                    stream.write(((ry) >> 8) & 0xff);
+                    buf[len++] = (byte) (rx);
+                    buf[len++] = (byte) (rx >> 8);
+                    buf[len++] = (byte) (rz);
+                    buf[len++] = (byte) (rz >> 8);
+                    buf[len++] = (byte) (ry);
+                    buf[len] = (byte) (ry >> 8);
+                    stream.write(buf, 0, len + 1);
                 }
 
                 @Override
