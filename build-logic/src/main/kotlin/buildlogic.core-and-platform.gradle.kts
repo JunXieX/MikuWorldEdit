@@ -10,11 +10,10 @@ ext["internalVersion"] = "$version+${rootProject.ext["gitCommitHash"]}"
 val publishingExtension = the<PublishingExtension>()
 
 configure<SigningExtension> {
-    if (!version.toString().endsWith("-SNAPSHOT")) {
-        val signingKey: String? by project
+    val signingKey: String? = findProperty("signingKey") as String?
+    if (!version.toString().endsWith("-SNAPSHOT") && signingKey != null) {
         val signingPassword: String? by project
         useInMemoryPgpKeys(signingKey, signingPassword)
-        isRequired
         sign(publishingExtension.publications)
     }
 }

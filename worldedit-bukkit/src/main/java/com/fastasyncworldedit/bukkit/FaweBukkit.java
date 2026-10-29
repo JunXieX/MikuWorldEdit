@@ -74,10 +74,8 @@ public class FaweBukkit implements IFawe, Listener {
                 new RenderListener(plugin);
             }
         } catch (final Throwable e) {
-            LOGGER.error("FastAsyncWorldEdit failed to initialise", e);
-            // Taking the server down is never the right reaction, and on a regionised server it would also be an
-            // off-thread call: disable the plugin instead so the rest of the server keeps running.
-            Bukkit.getPluginManager().disablePlugin(this.plugin);
+            // Let the platform disable the plugin: continuing would run every other call against a half built FAWE
+            throw new IllegalStateException("FastAsyncWorldEdit failed to initialise", e);
         }
 
         platformAdapter = new NMSAdapter();

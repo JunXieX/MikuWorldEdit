@@ -148,27 +148,7 @@ public abstract class AbstractBukkitGetBlocks<ServerLevel, LevelChunk> extends C
             final Runnable finalizer
     ) throws
             Exception {
-        if (TaskManager.taskManager().isFolia()) {
-            // There is no main thread to hand these to, and the chunk work already runs on the region that owns the
-            // chunk: lighting, heightmaps and packet sending all belong to that same thread.
-            try {
-                for (Runnable task : syncTasks) {
-                    if (task != null) {
-                        task.run();
-                    }
-                }
-                if (callback != null) {
-                    callback.run();
-                } else if (finalizer != null) {
-                    finalizer.run();
-                }
-            } catch (Throwable e) {
-                LOGGER.error("Error performing final chunk calling at {},{}", chunkX, chunkZ, e);
-                throw e;
-            }
-            return null;
-        }
-        if (!syncTasks.isEmpty()) {
+        if (!TaskManager.taskManager().isFolia() && !syncTasks.isEmpty()) {
             QueueHandler queueHandler = Fawe.instance().getQueueHandler();
 
             // Chain the sync tasks and the callback
@@ -193,12 +173,23 @@ public abstract class AbstractBukkitGetBlocks<ServerLevel, LevelChunk> extends C
             };
             //noinspection unchecked - required at compile time
             return (T) (Future) queueHandler.sync(chain);
-        } else {
+        }
+        // Regionised servers already run this on the thread owning the chunk: lighting, heightmaps and packet sending
+        // belong to that same thread, so there is nothing to hand over.
+        try {
+            for (Runnable task : syncTasks) {
+                if (task != null) {
+                    task.run();
+                }
+            }
             if (callback != null) {
                 callback.run();
             } else if (finalizer != null) {
                 finalizer.run();
             }
+        } catch (Throwable e) {
+            LOGGER.error("Error performing final chunk calling at {},{}", chunkX, chunkZ, e);
+            throw e;
         }
         return null;
     }
