@@ -520,8 +520,8 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
         final int[] paletteToBlock = FaweCache.INSTANCE.PALETTE_TO_BLOCK.get();
         final long[] blockStates = FaweCache.INSTANCE.BLOCK_STATES.get();
         final int[] blocksCopy = FaweCache.INSTANCE.SECTION_BLOCKS.get();
+        int num_palette = 0;
         try {
-            int num_palette;
             if (get == null) {
                 num_palette = createPalette(blockToPalette, paletteToBlock, blocksCopy, set, adapter, false);
             } else {
@@ -576,12 +576,14 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
             }
             return new LevelChunkSection(result.getOrThrow(), biomes);
         } catch (Throwable e) {
+            // a half built palette leaves the thread local mapping dirty, so reset it wholesale here
+            Arrays.fill(blockToPalette, Integer.MAX_VALUE);
             throw new RuntimeException("Failed to create block palette", e);
         } finally {
+            // The global palette path copies the whole ordinal mapping into blockToPalette, so that one buffer still
+            // needs a wholesale reset. blockStates and blocksCopy are rewritten in full on every call, and
+            // paletteToBlock is only ever read up to num_palette.
             Arrays.fill(blockToPalette, Integer.MAX_VALUE);
-            Arrays.fill(paletteToBlock, Integer.MAX_VALUE);
-            Arrays.fill(blockStates, 0);
-            Arrays.fill(blocksCopy, 0);
         }
     }
 
@@ -598,8 +600,8 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
         final int[] paletteToBlock = FaweCache.INSTANCE.PALETTE_TO_BLOCK.get();
         final long[] blockStates = FaweCache.INSTANCE.BLOCK_STATES.get();
         final int[] blocksCopy = FaweCache.INSTANCE.SECTION_BLOCKS.get();
+        int num_palette = 0;
         try {
-            int num_palette;
             if (get == null) {
                 num_palette = createPalette(blockToPalette, paletteToBlock, blocksCopy, set, adapter, true);
             } else {
@@ -644,12 +646,14 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
             }
             return new LevelChunkSection(result.getOrThrow(), biomes);
         } catch (Throwable e) {
+            // a half built palette leaves the thread local mapping dirty, so reset it wholesale here
+            Arrays.fill(blockToPalette, Integer.MAX_VALUE);
             throw new RuntimeException("Failed to create block palette", e);
         } finally {
+            // The global palette path copies the whole ordinal mapping into blockToPalette, so that one buffer still
+            // needs a wholesale reset. blockStates and blocksCopy are rewritten in full on every call, and
+            // paletteToBlock is only ever read up to num_palette.
             Arrays.fill(blockToPalette, Integer.MAX_VALUE);
-            Arrays.fill(paletteToBlock, Integer.MAX_VALUE);
-            Arrays.fill(blockStates, 0);
-            Arrays.fill(blocksCopy, 0);
         }
     }
 
