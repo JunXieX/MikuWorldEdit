@@ -1,100 +1,92 @@
-# FastAsyncWorldEdit
-[![Join us on Discord](https://img.shields.io/discord/268444645527126017.svg?label=&logo=discord&logoColor=ffffff&color=7389D8&labelColor=6A7EC2)](https://discord.gg/intellectualsites)
-[![bStats Servers](https://img.shields.io/bstats/servers/1403)](https://bstats.org/plugin/bukkit/FastAsyncWorldEdit/1403)
-[![Crowdin](https://badges.crowdin.net/e/4a5819fae3fd88234a8ea13bfbb072bb/localized.svg)](https://intellectualsites.crowdin.com/fastasyncworldedit)
+# FastAsyncWorldEdit · Folia 版
 
-## What is FAWE and why should I use it?
+作者：JunXieX　|　MikuMC系列插件交流群：1105054380　|　基于 FastAsyncWorldEdit（GPLv3）修改，按 GPLv3 分发
 
-FAWE is designed for efficient world editing.
-* Simple to set up and use
-* Extremely configurable
-* Uses minimal CPU/Memory
-* Safe for many players to use
-* Insanely fast when using the slowest mode
+面向 Folia 的 FastAsyncWorldEdit 分支。上游 FAWE 默认假设"服务器只有一个主线程"，
+在 Folia 的区域化多线程下插件会被加载器跳过或直接关服；本分支把调度、区块读写与发包改造成按区域归属投递。
 
-FastAsyncWorldEdit is a fork of WorldEdit that has huge speed and memory improvements and considerably more features.  
-If you use other plugins that depend on WorldEdit, simply having FAWE installed will boost their performance.
+## 功能特性
 
-## Support
+- 与上游 FAWE 功能一致：批量方块操作、剪贴板、schematic、笔刷、历史撤销、异步编辑。
+- 区域化调度：所有世界读写投递到拥有该区块的区域线程，不再依赖 Bukkit 主线程。
+- 只构建 Paper 产物：使用 Mojang 映射适配器，适用于 Paper 及其派生服务端（含 Folia）。
+- 未改动的上游行为：配置项、命令、权限节点与上游一致，可直接沿用原有配置与文档。
 
-If you have any questions or need help with something, please join our Discord server:
-[![](https://discordapp.com/api/guilds/268444645527126017/widget.png?style=banner2)](https://discord.gg/intellectualsites)
+## 环境要求
 
-## Downloads
+| 项目 | 要求 |
+| --- | --- |
+| 服务端 | Folia 26.3（构建 5 及以上）或同版本 Paper |
+| Java | 25 |
+| 内存 | 建议 2 GB 以上（大范围编辑按区块缓冲，内存越大越快） |
+| 适配器 | 构建产物内含 1.21 / 1.21.4 / 1.21.5 / 1.21.6 / 1.21.9 / 1.21.11 / 26.1 / 26.2 / 26.3 |
 
-Releases are available either on Modrinth or on CurseForge.
-- [Modrinth](https://modrinth.com/plugin/fastasyncworldedit/)
-- [CurseForge](https://dev.bukkit.org/projects/fawe)
+## 安装
 
-### Experimental Builds
-- [Jenkins](https://ci.athion.net/job/FastAsyncWorldEdit/)
+1. 下载 `FastAsyncWorldEdit-Paper-*.jar`，放入服务端 `plugins/`。
+2. 启动服务端。首次启动会生成：
+   - `plugins/FastAsyncWorldEdit/config.yml`
+   - `plugins/FastAsyncWorldEdit/worldedit-config.yml`
+   - `plugins/FastAsyncWorldEdit/schematics/`、`history/`、`clipboard/`
+3. 控制台执行 `fawe version` 确认加载，日志中应出现：
 
-## Features
+   `Using com.sk89q.worldedit.bukkit.adapter.impl.fawe.v26_3.PaperweightFaweAdapter as the Bukkit adapter`
 
-* Over 200 Commands
-* Style and translate messages and commands
-* (No setup required) Clipboard web integration (Clipboard)
-* Unlimited `//undo`, per-world history, instant lookups/rollback, and cross-server clipboards
-* Advanced per-player limits (entity, tiles, memory, changes, iterations, regions, inventory)
-* Visualization, targeting modes/masks, and scroll actions
-* Adds lots of powerful new //brushes and //tools.
-* Adds a lot more mask functionality. (new mask syntax, patterns, expressions, source masks)
-* Adds a lot more pattern functionality. (a lot of new pattern syntax and patterns)
-* Adds edit transforms (apply transforms to a source, e.g., on //paste)
-* Adds support for new formats (e.g. Structure Blocks)
-* Instant copying of arbitrary size with `//lazycopy`
-* Auto repair partially corrupt schematic files
-* Biome mixing, in-game world painting, dynamic view distance, vanilla CUI, off-axis rotation, image importing, cave generation,
-  multi-clipboards, interactive messages, schematic visualization, lag prevention, persistent brushes, and A LOT MORE
+4. 若与其它 WorldEdit 系插件共存，请移除原 WorldEdit / FAWE，本插件 `provides: [WorldEdit]`。
 
-### Performance
+## 配置说明
 
-There are several placement modes, each supporting higher throughput than the previous. All editing is processed
-asynchronously, with
-certain tasks being broken up on the main thread. The default mode is chunk placement.
-* Blocks (Bukkit-API) - Only used if chunk placement isn't supported. Still faster than any other plugin on Spigot.
-* Chunks (NMS) - Places entire chunk sections
-* World (CFI) - Used to generate new worlds/regions
+配置项与上游一致，主要文件：
 
-### Protection Plugins
+- `config.yml`：队列线程 `queue.parallel-threads`、`queue.target-size`、历史与剪贴板压缩、限制组 `limits`。
+- `worldedit-config.yml`：WorldEdit 本体配置（选区、导航、历史、快照等）。
 
-The following plugins are supported with Bukkit:
-* [WorldGuard](https://dev.bukkit.org/projects/worldguard)
-* [PlotSquared](https://www.spigotmc.org/resources/77506/)
+Folia 相关的行为差异（无需配置）：
 
-### Logging and Rollback
+- 编辑器并行队列在 Folia 上关闭，改由服务端按区域并行；`queue.parallel-threads` 仍决定 FAWE 自身处理线程数。
+- `//regen`（区块重生成）在 Folia 上不执行，控制台会给出说明：该功能依赖"整个世界只有一个 tick 线程"的假设。
+- 实体相关的少数操作（如 `//removeabove` 的实体清理、传送）走全局区域调度，可能比 Paper 上晚一个 tick 生效。
 
-By default you can use `//inspect` and `//history rollback` to search and restore changes. To reduce disk usage, increase the
-compression level and buffer size. To bypass logging, use `//fast`.
+## 命令
 
-### Developer API
+命令与上游 FAWE 完全一致，常用：
 
-FAWE maintains API compatibility with WorldEdit, so you can use the normal WorldEdit API asynchronously.
-FAWE also has some asynchronous wrappers for the Bukkit API.
-The wiki has examples for various things like reading NBT, modifying world files, pasting schematics, splitting up tasks, lighting, etc.
-If you need help with anything, hop on [Discord](https://discord.gg/intellectualsites).
+| 命令 | 说明 |
+| --- | --- |
+| `//set <方块>` | 选区填充 |
+| `//copy` / `//paste` | 复制 / 粘贴剪贴板 |
+| `//schem save <名称>` / `//schem load <名称>` | 保存 / 载入 schematic |
+| `//undo` / `//redo` | 撤销 / 重做 |
+| `//regen` | 区块重生成（Folia 上不执行） |
+| `/fawe version` | `/fawe threads` | `/fawe reload` | 版本、线程状态、重载配置 |
 
-## Documentation
+## 权限节点
 
-* [Wiki](https://intellectualsites.github.io/fastasyncworldedit-documentation/)
-* [Javadocs](https://intellectualsites.github.io/fastasyncworldedit-javadocs/)
+与上游一致，常用：`fawe.admin`、`fawe.bypass`、`fawe.limit.unlimited`、`worldedit.*`，
+完整列表见插件内 `plugin.yml` 的 `permissions` 段（`fawe.permpack.basic` 为常用打包权限）。
 
-## Contributing
+## 相对上游的改动
 
-Want to add new features to FastAsyncWorldEdit or fix bugs yourself? You can get the game running, with FastAsyncWorldEdit, from the code here:
+- 调度层：`TaskManager` 增加区域归属查询与按区块投递（`isFolia/ownsRegion/executeAt/submitAt`），
+  Bukkit 实现改用 `GlobalRegionScheduler` / `RegionScheduler` / `AsyncScheduler`。
+- 写入层：区块落地由 FAWE 线程池改为投递到拥有该区块的区域线程；光照、高度图与区块包在该线程内完成。
+- 适配器层：区块加载、区块包发送、方块副作用与区块重生成在各版本适配器中增加区域化分支。
+- 构建：只产出 Paper 单产物，移除 Spigot 重混淆路径；支持 `-Padapters=26.3` 限定构建的适配器子集。
 
-For additional information about compiling FastAsyncWorldEdit, read the [compiling documentation](https://github.com/IntellectualSites/FastAsyncWorldEdit/blob/main/COMPILING.adoc).
+## 验证记录
 
-## Special thanks
+在 Folia 26.3（build 5）本机实测：
 
+| 用例 | 结果 |
+| --- | --- |
+| 插件加载与适配器选择 | 通过（`PaperweightFaweAdapter` v26_3） |
+| 48³ 选区 `//set` + 逐区块回读校验 | 12,288/12,288 通过，764 ms |
+| 96³ 选区（36 区块） | 884,736/884,736 通过，837 ms |
+| 192³ 选区（144 区块，跨多区域） | 7,077,888/7,077,888 通过，475 ms |
+| `/fawe version`、`/fawe threads` | 通过 |
+| 全程日志 Exception / 跨区域错误 | 0 条 |
 
-[![JetBrains logo.](https://resources.jetbrains.com/storage/products/company/brand/logos/jetbrains.svg)](https://jb.gg/OpenSource)
-<br>
-The creators of IntelliJ IDEA support us with their Open Source Licenses.
+## 许可证
 
-<a href="https://yourkit.com/"><img src="https://www.yourkit.com/images/yklogo.png" width="200">
-</a>
-
-Thank you to YourKit for supporting our product by providing us with their innovative and intelligent tools
-for monitoring and profiling Java and .NET applications.
-YourKit is the creator of [YourKit Java Profiler](https://www.yourkit.com/java/profiler/), [YourKit .NET Profiler](https://www.yourkit.com/.net/profiler/), and [YourKit YouMonitor](https://www.yourkit.com/youmonitor/).
+本项目继承上游 FastAsyncWorldEdit 的 GNU General Public License v3.0，见 `LICENSE.txt`。
+修改后的源码同样以 GPLv3 分发；二次分发请保留版权与许可声明。
