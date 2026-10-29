@@ -13,6 +13,7 @@ import com.sk89q.worldedit.extent.Extent;
 import com.sk89q.worldedit.function.pattern.Pattern;
 import com.sk89q.worldedit.math.BlockVector2;
 import com.sk89q.worldedit.math.BlockVector3;
+import com.sk89q.worldedit.regions.CuboidRegion;
 import com.sk89q.worldedit.regions.Region;
 import com.sk89q.worldedit.world.RegenOptions;
 import com.sk89q.worldedit.world.biome.BiomeType;
@@ -22,8 +23,11 @@ import org.bukkit.generator.WorldInfo;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiFunction;
 import java.util.function.BooleanSupplier;
@@ -107,11 +111,7 @@ public abstract class Regenerator {
         createSource();
         final Pattern pattern = createPattern();
         if (TaskManager.taskManager().isFolia()) {
-            // A regionised server has no single thread that could drive the temporary level's chunk queue, and the
-            // region threads that write the result must not read it. So the source chunks are materialised here, on
-            // this one thread, before the write starts; the write itself is queued and dispatched per region as usual.
-            preloadSource();
-            target.setBlocks(region, pattern);
+            copyToWorldRegionised(pattern);
             return;
         }
         final long timeoutPerTick = TimeUnit.MILLISECONDS.toNanos(10);
@@ -141,21 +141,70 @@ public abstract class Regenerator {
     }
 
     /**
-     * Forces every source chunk of the region into memory on the calling thread, so that the block lookups done while
-     * writing the result never reach the (unticked) temporary level from a region thread.
+     * Copies the regenerated blocks on a regionised server.
+     * <p>
+     * The temporary level is not part of the regioniser, so several of its accessors refuse to run outside a ticking
+     * thread. The copy therefore runs on the global region thread, one chunk at a time, and yields between chunks so the
+     * server keeps ticking. The block writes still go through the regular queue and are dispatched per region, so only
+     * the reads happen here.
+     * </p>
      */
-    private void preloadSource() {
-        for (BlockVector2 chunkPos : region.getChunks()) {
-            final IChunk chunk = source.getOrCreateChunk(chunkPos.x(), chunkPos.z());
-            if (chunk instanceof ChunkHolder<?> holder) {
-                final IChunkGet get = holder.getOrCreateGet();
-                for (int layer = get.getMinSectionPosition(); layer <= get.getMaxSectionPosition(); layer++) {
-                    get.load(layer);
+    private void copyToWorldRegionised(final Pattern pattern) {
+        final List<BlockVector2> chunks = new ArrayList<>(region.getChunks());
+        final BlockVector3 min = region.getMinimumPoint();
+        final BlockVector3 max = region.getMaximumPoint();
+        final CompletableFuture<Void> done = new CompletableFuture<>();
+        final int[] next = {0};
+        final int[] taskId = {-1};
+        taskId[0] = TaskManager.taskManager().repeat(() -> {
+            try {
+                final long start = System.nanoTime();
+                while (next[0] < chunks.size()) {
+                    final BlockVector2 chunkPos = chunks.get(next[0]++);
+                    preloadChunk(chunkPos);
+                    target.setBlocks(chunkSlice(chunkPos, min, max), pattern);
+                    if (System.nanoTime() - start >= TimeUnit.MILLISECONDS.toNanos(5)) {
+                        // give the tick back, the rest runs a tick later
+                        return;
+                    }
                 }
+                TaskManager.taskManager().cancel(taskId[0]);
+                done.complete(null);
+            } catch (Throwable t) {
+                TaskManager.taskManager().cancel(taskId[0]);
+                done.completeExceptionally(t);
             }
-            runTasks(() -> true);
+        }, 1);
+        try {
+            done.get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException(e);
+        } catch (ExecutionException e) {
+            throw new RuntimeException(e.getCause());
         }
-        source.flush();
+    }
+
+    /**
+     * Materialises one source chunk so the block lookups do not have to re-enter the temporary level.
+     */
+    private void preloadChunk(final BlockVector2 chunkPos) {
+        final IChunk chunk = source.getOrCreateChunk(chunkPos.x(), chunkPos.z());
+        if (chunk instanceof ChunkHolder<?> holder) {
+            final IChunkGet get = holder.getOrCreateGet();
+            for (int layer = get.getMinSectionPosition(); layer <= get.getMaxSectionPosition(); layer++) {
+                get.load(layer);
+            }
+        }
+        runTasks(() -> true);
+    }
+
+    private Region chunkSlice(final BlockVector2 chunkPos, final BlockVector3 min, final BlockVector3 max) {
+        final int fromX = Math.max(min.x(), chunkPos.x() << 4);
+        final int fromZ = Math.max(min.z(), chunkPos.z() << 4);
+        final int toX = Math.min(max.x(), (chunkPos.x() << 4) + 15);
+        final int toZ = Math.min(max.z(), (chunkPos.z() << 4) + 15);
+        return new CuboidRegion(region.getWorld(), BlockVector3.at(fromX, min.y(), fromZ), BlockVector3.at(toX, max.y(), toZ));
     }
 
     private abstract class ChunkwisePattern implements Pattern {
