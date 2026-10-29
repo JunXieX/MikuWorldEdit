@@ -177,6 +177,16 @@ jobs:
             echo "| --- | --- | --- | --- |"
             grep "MWETEST RESULT" logs/latest.log | tail -n "$RUNS" |
               sed -E 's/.*offset=([0-9]+) applyMs=([0-9-]+) closeMs=([0-9-]+) totalMs=([0-9]+).*/| \1 | \2 | \3 | \4 |/'
+            echo ""
+            # absolute numbers vary by tens of percent between hosted runners, so report the spread as well
+            TOTALS=$(grep "MWETEST RESULT" logs/latest.log | tail -n "$RUNS" |
+              sed -E 's/.*totalMs=([0-9]+).*/\1/' | sort -n)
+            MEDIAN=$(echo "$TOTALS" | awk '{a[NR]=$1} END {print (NR%2 ? a[(NR+1)/2] : int((a[NR/2]+a[NR/2+1])/2))}')
+            MIN=$(echo "$TOTALS" | head -1)
+            MAX=$(echo "$TOTALS" | tail -1)
+            echo "median $MEDIAN ms, min $MIN ms, max $MAX ms over $RUNS runs"
+            echo ""
+            echo "Hosted runners differ by tens of percent between jobs: compare versions on the same runner or treat <30% as noise."
           } > ../result.md
           cat ../result.md
 
