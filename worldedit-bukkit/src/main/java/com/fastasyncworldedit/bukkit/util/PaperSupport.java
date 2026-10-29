@@ -22,7 +22,8 @@ public enum PaperSupport {
         PAPER = hasClass("com.destroystokyo.paper.PaperConfig")
             || hasClass("io.papermc.paper.configuration.Configuration");
         // The regionised server classes only exist on Folia (and Folia derived forks)
-        FOLIA = hasClass("io.papermc.paper.threadedregions.RegionizedServer");
+        FOLIA = hasClass("io.papermc.paper.threadedregions.RegionizedServer")
+                || hasClass("io.papermc.paper.threadedregions.TickRegionScheduler");
     }
 
     public static boolean isPaper() {

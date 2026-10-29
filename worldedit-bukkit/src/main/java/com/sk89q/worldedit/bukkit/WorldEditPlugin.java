@@ -452,7 +452,13 @@ public class WorldEditPlugin extends JavaPlugin {
         if (config != null) {
             config.unload();
         }
-        this.getServer().getScheduler().cancelTasks(this);
+        if (PaperSupport.isFolia()) {
+            // The Bukkit scheduler does not exist on regionised servers; tasks live on the region schedulers
+            Bukkit.getGlobalRegionScheduler().cancelTasks(this);
+            Bukkit.getAsyncScheduler().cancelTasks(this);
+        } else {
+            this.getServer().getScheduler().cancelTasks(this);
+        }
     }
 
     /**

@@ -60,9 +60,9 @@ public class BukkitTaskManager extends TaskManager {
         if (!this.folia) {
             return Fawe.isMainThread();
         }
-        // There is no public "is a region thread" query: the only reliable ownership question is location bound, which
-        // ownsRegion answers. Callers that need a plain yes/no get the conservative answer so that work is hopped.
-        return ThreadingContextHolder.isTickThread();
+        // Folia reports true for every tick thread here (the global region thread and all region threads), while the
+        // async pools report false. Region ownership still has to be checked with ownsRegion.
+        return Bukkit.isPrimaryThread();
     }
 
     @Override
