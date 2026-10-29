@@ -42,8 +42,9 @@ jobs:
 
       - name: Server fixture
         run: |
-          BUILD=$(curl -fsSL https://fill.papermc.io/v3/projects/folia/versions/26.3/builds | jq -r 'sort_by(.build) | last | .build')
-          URL=$(curl -fsSL "https://fill.papermc.io/v3/projects/folia/versions/26.3/builds/$BUILD" | jq -r '.downloads["server:default"].url')
+          META=$(curl -fsSL https://fill.papermc.io/v3/projects/folia/versions/26.3/builds/latest)
+          URL=$(echo "$META" | jq -r '.downloads["server:default"].url')
+          echo "downloading $(echo "$META" | jq -r '.downloads["server:default"].name')"
           mkdir -p bench/server/plugins
           curl -fsSL "$URL" -o bench/server/folia.jar
           echo "eula=true" > bench/server/eula.txt
