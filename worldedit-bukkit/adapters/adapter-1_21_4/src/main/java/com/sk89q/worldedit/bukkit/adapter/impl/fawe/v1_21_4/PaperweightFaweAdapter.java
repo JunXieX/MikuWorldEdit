@@ -264,8 +264,9 @@ public final class PaperweightFaweAdapter extends FaweAdapter<Tag, ServerLevel> 
     }
 
     @Override
-    public synchronized BlockMaterial getMaterial(BlockState state) {
-        net.minecraft.world.level.block.state.BlockState blockState = ((CraftBlockData) Bukkit.createBlockData(state.getAsString())).getState();
+    public BlockMaterial getMaterial(BlockState state) {
+        // Direct ordinal -> block state lookup, no string round trip and no lock
+        final net.minecraft.world.level.block.state.BlockState blockState = adapt(state);
         return new PaperweightBlockMaterial(blockState.getBlock(), blockState);
     }
 
