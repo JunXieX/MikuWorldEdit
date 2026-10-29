@@ -27,15 +27,6 @@ public class FaweOutputStream extends DataOutputStream {
         written++;
     }
 
-    /**
-     * Forwards a whole run to the parent in one call. The inherited {@code FilterOutputStream} version loops over
-     * {@link #write(int)}, which costs one call per byte for every compression layer in the chain.
-     */
-    @Override
-    public void write(final byte[] b, final int off, final int len) throws IOException {
-        out.write(b, off, len);
-        written += len;
-    }
 
     public void write(int b, int amount) throws IOException {
         for (int i = 0; i < amount; i++) {
