@@ -52,7 +52,6 @@ import com.fastasyncworldedit.core.math.MutableBlockVector2;
 import com.fastasyncworldedit.core.math.MutableBlockVector3;
 import com.fastasyncworldedit.core.math.MutableVector3;
 import com.fastasyncworldedit.core.math.random.SimplexNoise;
-import com.fastasyncworldedit.core.queue.IChunkExtent;
 import com.fastasyncworldedit.core.queue.implementation.preloader.Preloader;
 import com.fastasyncworldedit.core.util.ExtentTraverser;
 import com.fastasyncworldedit.core.util.MaskTraverser;
@@ -1421,18 +1420,6 @@ public class EditSession extends PassthroughExtent implements AutoCloseable {
         Operations.completeBlindly(visitor);
         return this.changes;
     }
-
-    //FAWE start - read straight from the queue chunk: the wrapper chain costs ~2.4 us per block, which dominates
-    // per-block operations such as //replace or //count over large regions
-    @Override
-    public BlockState getBlock(final int x, final int y, final int z) {
-        final Extent inner = getExtent();
-        if (inner instanceof IChunkExtent<?> chunks) {
-            return chunks.getBlock(x, y, z);
-        }
-        return super.getBlock(x, y, z);
-    }
-    //FAWE end
 
     @Override
     public <B extends BlockStateHolder<B>> int replaceBlocks(Region region, Set<BaseBlock> filter, B replacement) throws
