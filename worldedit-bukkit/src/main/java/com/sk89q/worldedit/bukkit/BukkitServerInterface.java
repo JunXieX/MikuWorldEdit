@@ -20,6 +20,7 @@
 package com.sk89q.worldedit.bukkit;
 
 import com.fastasyncworldedit.bukkit.util.MinecraftVersion;
+import com.fastasyncworldedit.core.util.TaskManager;
 import com.fastasyncworldedit.bukkit.util.PaperSupport;
 import com.fastasyncworldedit.core.configuration.Settings;
 import com.fastasyncworldedit.core.extent.processor.PlacementStateProcessor;
@@ -135,7 +136,11 @@ public class BukkitServerInterface extends AbstractPlatform implements MultiUser
 
     @Override
     public int schedule(long delay, long period, Runnable task) {
-        return Bukkit.getScheduler().scheduleSyncRepeatingTask(plugin, task, delay, period);
+        // TaskManager knows how to run repeating work on both a single threaded and a regionised server
+        if (delay > 0) {
+            TaskManager.taskManager().later(task, (int) Math.max(1L, delay));
+        }
+        return TaskManager.taskManager().repeat(task, (int) Math.max(1L, period));
     }
 
     @Override

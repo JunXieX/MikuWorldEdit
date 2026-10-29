@@ -19,6 +19,7 @@
 
 package com.sk89q.worldedit.bukkit;
 
+import com.fastasyncworldedit.bukkit.util.PaperSupport;
 import com.fastasyncworldedit.core.util.TaskManager;
 import com.sk89q.worldedit.WorldEdit;
 import com.sk89q.worldedit.extension.platform.AbstractCommandBlockActor;
@@ -191,6 +192,10 @@ public class BukkitBlockCommandSender extends AbstractCommandBlockActor {
 
             @Override
             public boolean isActive() {
+                if (PaperSupport.isFolia()) {
+                    // Regionised servers may only read a block on the thread owning it; keep the last known state
+                    return active;
+                }
                 if (Bukkit.isPrimaryThread()) {
                     // we can update eagerly
                     updateActive();

@@ -106,7 +106,8 @@ dependencies {
     project.project(":worldedit-bukkit:adapters").subprojects.forEach {
         // The plugin JAR targets Paper (and Paper-derived servers), so every adapter is used in its Mojang-mapped form.
         if (it.name.startsWith("adapter-1_")) {
-            "adaptersMojmap"(project(it.path))
+            // "adapters" is the configuration holding Mojang-mapped adapters
+            "adapters"(project(it.path))
         } else {
             "adaptersGlobalMojmap"(project(it.path))
         }

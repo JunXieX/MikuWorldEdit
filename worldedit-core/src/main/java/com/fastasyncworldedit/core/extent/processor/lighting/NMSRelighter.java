@@ -899,7 +899,9 @@ public class NMSRelighter implements Relighter {
             chunk.setBitMask(bitMask);
             iter.remove();
         }
-        if (Settings.settings().LIGHTING.ASYNC) {
+        if (Settings.settings().LIGHTING.ASYNC || TaskManager.taskManager().isFolia()) {
+            // Regionised servers must not park the global region thread on a chunk flush: the flush itself already
+            // dispatches every chunk to the region that owns it.
             queue.flush();
             finished.set(true);
         } else {
@@ -937,7 +939,7 @@ public class NMSRelighter implements Relighter {
                 finished.set(true);
             }
         };
-        if (Settings.settings().LIGHTING.ASYNC) {
+        if (Settings.settings().LIGHTING.ASYNC || TaskManager.taskManager().isFolia()) {
             runnable.run();
         } else {
             TaskManager.taskManager().sync(runnable);
