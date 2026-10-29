@@ -272,6 +272,9 @@ public abstract class Regenerator {
 
         private BaseBlock block(final int x, final int y, final int z) {
             final BlockState state = state(x, y, z);
+            if (tiles.isEmpty()) {
+                return state.toBaseBlock();
+            }
             final FaweCompoundTag tile = tiles.get(BlockVector3.at((chunkX << 4) + (x & 15), y, (chunkZ << 4) + (z & 15)));
             return tile == null ? state.toBaseBlock() : state.toBaseBlock(tile.linTag());
         }
