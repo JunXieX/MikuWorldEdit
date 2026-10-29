@@ -229,26 +229,40 @@ public abstract class Regenerator {
     private static final class SnapshotPattern implements Pattern {
 
         private final Map<Long, SourceChunk> snapshots;
-        private SourceChunk current;
+        private int lastChunkX = Integer.MIN_VALUE;
+        private int lastChunkZ = Integer.MIN_VALUE;
+        private SourceChunk lastChunk;
 
         private SnapshotPattern(final Map<Long, SourceChunk> snapshots) {
             this.snapshots = snapshots;
         }
 
+        private SourceChunk chunkAt(final int x, final int z) {
+            final int chunkX = x >> 4;
+            final int chunkZ = z >> 4;
+            if (chunkX == lastChunkX && chunkZ == lastChunkZ) {
+                return lastChunk;
+            }
+            final SourceChunk snapshot = snapshots.get(MathMan.pairInt(chunkX, chunkZ));
+            lastChunkX = chunkX;
+            lastChunkZ = chunkZ;
+            lastChunk = snapshot;
+            return snapshot;
+        }
+
         @Override
         public <T extends IChunk> T applyChunk(final T chunk, final Region region) {
-            this.current = snapshots.get(MathMan.pairInt(chunk.getX(), chunk.getZ()));
             return chunk;
         }
 
         @Override
         public void finishChunk(final IChunk chunk) {
-            this.current = null;
+            // the snapshot is looked up per position, nothing to reset
         }
 
         @Override
         public BaseBlock applyBlock(final BlockVector3 position) {
-            final SourceChunk snapshot = current;
+            final SourceChunk snapshot = chunkAt(position.x(), position.z());
             if (snapshot == null) {
                 return BlockTypes.AIR.getDefaultState().toBaseBlock();
             }
@@ -257,7 +271,7 @@ public abstract class Regenerator {
 
         @Override
         public boolean apply(final Extent extent, final BlockVector3 get, final BlockVector3 set) throws WorldEditException {
-            final SourceChunk snapshot = current;
+            final SourceChunk snapshot = chunkAt(get.x(), get.z());
             if (snapshot == null) {
                 return false;
             }
