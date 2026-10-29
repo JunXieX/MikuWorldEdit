@@ -4,6 +4,7 @@ import com.fastasyncworldedit.core.queue.IChunk;
 import com.fastasyncworldedit.core.queue.IChunkCache;
 import com.fastasyncworldedit.core.queue.IChunkGet;
 import com.fastasyncworldedit.core.queue.implementation.SingleThreadQueueExtent;
+import com.fastasyncworldedit.core.queue.implementation.chunk.ChunkHolder;
 import com.fastasyncworldedit.core.util.TaskManager;
 import com.sk89q.worldedit.WorldEditException;
 import com.sk89q.worldedit.bukkit.BukkitAdapter;
@@ -146,9 +147,11 @@ public abstract class Regenerator {
     private void preloadSource() {
         for (BlockVector2 chunkPos : region.getChunks()) {
             final IChunk chunk = source.getOrCreateChunk(chunkPos.x(), chunkPos.z());
-            final IChunkGet get = chunk.getOrCreateGet();
-            for (int layer = get.getMinSectionPosition(); layer <= get.getMaxSectionPosition(); layer++) {
-                get.load(layer);
+            if (chunk instanceof ChunkHolder<?> holder) {
+                final IChunkGet get = holder.getOrCreateGet();
+                for (int layer = get.getMinSectionPosition(); layer <= get.getMaxSectionPosition(); layer++) {
+                    get.load(layer);
+                }
             }
             runTasks(() -> true);
         }
