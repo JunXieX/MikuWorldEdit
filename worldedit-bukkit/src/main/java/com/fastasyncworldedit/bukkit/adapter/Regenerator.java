@@ -165,13 +165,10 @@ public abstract class Regenerator {
 
     private Map<Long, SourceChunk> snapshotSource() {
         final Map<Long, SourceChunk> snapshots = new ConcurrentHashMap<>();
-        // Regionised servers only let a chunk be loaded on the thread owning that chunk's region, so every source chunk
-        // is read on the region that owns the same coordinates in the real world. The reads are serialised here.
+        // Loading from a level that owns no region is only allowed off the tick threads, so the reads stay on the
+        // calling (worker) thread and never touch a region thread.
         for (BlockVector2 chunkPos : region.getChunks()) {
-            final SourceChunk snapshot = TaskManager.taskManager()
-                    .submitAt(region.getWorld(), chunkPos.x(), chunkPos.z(), () -> snapshotChunk(chunkPos))
-                    .join();
-            snapshots.put(MathMan.pairInt(chunkPos.x(), chunkPos.z()), snapshot);
+            snapshots.put(MathMan.pairInt(chunkPos.x(), chunkPos.z()), snapshotChunk(chunkPos));
         }
         return snapshots;
     }
