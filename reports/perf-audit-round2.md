@@ -96,3 +96,24 @@ CI 的 `perf.yml` 本来就是每次换 offset（`i*1000`），所以同一 runn
 | section 三份拷贝 → 两份 | 副本只在开启历史时产生，历史总成本 40–65 ms，去掉一份约 5–10 ms | **未实施**：`createCopy` 承担跨线程数据存活 |
 | `CharSetBlocks` 池失效 | 每区块约 1–2 KB，96³ 合计 36–72 KB | **未实施**：回收入口被 `ChunkHolder.recycle()` 明确拒绝，改生命周期风险不对等 |
 | 空 chunk `Thread.sleep(5-age)` | 批量写路径无法复现；`filtered` 探针跑出 1.8–2.1 s，但那是 `replaceBlocks` 的逐方块访问（约 2 µs/方块），`closeMs` 为 0 | **未实施**：与 sleep 无关，真正的慢点是逐方块 replace 路径 |
+## 7. `//replace` 无匹配仍耗时 2.1 秒（2026-10-29 实测定位）
+
+用 `mweprobe` 在同一台机器、同一世界、全新区域上隔离三段：
+
+| 探针 | 96³（884,736 方块） | 说明 |
+| --- | --- | --- |
+| `read`（只调 `session.getBlock`） | 2107–2331 ms | 每个方块一次读取 = **2.4–2.6 µs** |
+| `filtered`（`//replace` 无匹配） | 2105–2126 ms | 与 `read` 完全一致 → 无匹配 replace 的成本就是"每方块读一次" |
+| `baseline`（`//set`） | 180–320 ms close + 3–20 ms apply | 批量路径按区块，不逐方块 |
+
+结论：慢的不是 replace 逻辑，而是 **`EditSession.getBlock` 单方块读取要穿整条 extent 链，2.4 µs/次**。
+区块级读取（`IChunkExtent.getBlock` → `CharGetBlocks` 的 char[]）本应是几十纳秒，理论上 40–100 倍空间。
+
+尝试过两种短路方式，均未生效（实测读取耗时不变）：
+
+1. `getExtent() instanceof IChunkExtent` —— 直接内层 extent 不是区块 extent；
+2. `ExtentTraverser.findAndGet(IChunkExtent.class)` 沿链查找 —— 同样拿不到（链上不暴露队列 extent）。
+
+因此这条要真正落地，必须改成结构性方案：把 `//replace`/`//count` 的逐方块循环下沉到持有队列的层（`IQueueExtent`）实现，
+或者让 `EditSession` 对外暴露它持有的队列 extent。影响面在"命令层 ↔ 编辑会话"的边界，不在热路径内部，
+所以本轮不改代码，仅记录定位结果与两条已排除的路径。
