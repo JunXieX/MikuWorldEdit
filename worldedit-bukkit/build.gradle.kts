@@ -144,7 +144,7 @@ dependencies {
 tasks.named<Copy>("processResources") {
     val internalVersion = project.ext["internalVersion"]
     inputs.property("internalVersion", internalVersion)
-    filesMatching("plugin.yml") {
+    filesMatching("paper-plugin.yml") {
         expand(mapOf("internalVersion" to internalVersion))
     }
 }

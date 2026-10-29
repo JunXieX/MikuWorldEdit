@@ -1,16 +1,26 @@
 name: FastAsyncWorldEdit
-main: com.sk89q.worldedit.bukkit.WorldEditPlugin
 version: "${internalVersion}"
-load: STARTUP
-api-version: 1.21
+main: com.sk89q.worldedit.bukkit.WorldEditPlugin
+api-version: '1.21'
 folia-supported: true
-softdepend: [ Vault ]
-provides: [ WorldEdit ]
-website: https://modrinth.com/plugin/fastasyncworldedit/
 description: Blazingly fast world manipulation for builders, large networks and developers.
 authors: [ Empire92, MattBDev, IronApollo, dordsor21, NotMyFault, SirYwell ]
-loadbefore: [ WorldGuard, PlotSquared ]
-database: false
+website: https://modrinth.com/plugin/fastasyncworldedit/
+provides: [ WorldEdit ]
+dependencies:
+  server:
+    Vault:
+      load: BEFORE
+      required: false
+      join-classpath: false
+    WorldGuard:
+      load: BEFORE
+      required: false
+      join-classpath: false
+    PlotSquared:
+      load: BEFORE
+      required: false
+      join-classpath: false
 permissions:
   fawe.plotsquared:
     default: true
