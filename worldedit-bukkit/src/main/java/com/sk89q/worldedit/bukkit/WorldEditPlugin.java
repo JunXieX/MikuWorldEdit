@@ -251,17 +251,10 @@ public class WorldEditPlugin extends JavaPlugin {
             // register this so we can load world-dependent data right as the first world is loading
             getServer().getPluginManager().registerEvents(new WorldInitListener(), this);
         } else {
-            //FAWE start
-            LOGGER.warn(
-                    "Server reload detected. This may cause various issues with FastAsyncWorldEdit and dependent plugins. Reloading the server is not advised.");
-            LOGGER.warn("For more information why reloading is bad, see https://madelinemiller.dev/blog/problem-with-reload/");
+            //FAWE start - a Paper plugin is enabled after the worlds exist, so this is the normal path here
+            setupPreWorldData();
+            setupWorldData();
             //FAWE end
-            try {
-                setupPreWorldData();
-                // since worlds are loaded already, we can do this now
-                setupWorldData();
-            } catch (Throwable ignored) {
-            }
         }
 
         // Enable metrics
