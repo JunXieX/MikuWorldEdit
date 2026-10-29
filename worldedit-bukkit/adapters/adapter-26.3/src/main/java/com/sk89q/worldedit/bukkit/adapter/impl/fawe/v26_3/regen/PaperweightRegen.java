@@ -100,6 +100,11 @@ public class PaperweightRegen extends Regenerator {
 
     @Override
     protected void runTasks(final BooleanSupplier shouldKeepTicking) {
+        if (TaskManager.taskManager().isFolia()) {
+            // Folia's main thread executor refuses to run off a tick thread, and the temporary level's generation is
+            // completed by the chunk system threads anyway: blocking on the chunk itself is enough there.
+            return;
+        }
         // The temporary level is private to this regeneration and is never ticked, so its chunk queue has to be pumped
         // from the calling thread on every platform.
         while (shouldKeepTicking.getAsBoolean()) {
