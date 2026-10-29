@@ -53,6 +53,7 @@ import com.fastasyncworldedit.core.math.MutableBlockVector3;
 import com.fastasyncworldedit.core.math.MutableVector3;
 import com.fastasyncworldedit.core.math.random.SimplexNoise;
 import com.fastasyncworldedit.core.queue.IChunkExtent;
+import com.fastasyncworldedit.core.util.ExtentTraverser;
 import com.fastasyncworldedit.core.queue.implementation.preloader.Preloader;
 import com.fastasyncworldedit.core.util.ExtentTraverser;
 import com.fastasyncworldedit.core.util.MaskTraverser;
@@ -1424,10 +1425,25 @@ public class EditSession extends PassthroughExtent implements AutoCloseable {
 
     //FAWE start - read straight from the queue chunk: the wrapper chain costs ~2.4 us per block, which dominates
     // per-block operations such as //replace or //count over large regions
+    private IChunkExtent<?> chunkExtent;
+    private boolean chunkExtentResolved;
+
+    private IChunkExtent<?> chunkExtent() {
+        if (!chunkExtentResolved) {
+            chunkExtentResolved = true;
+            try {
+                chunkExtent = new ExtentTraverser<Extent>(getExtent()).findAndGet(IChunkExtent.class);
+            } catch (RuntimeException ignored) {
+                chunkExtent = null;
+            }
+        }
+        return chunkExtent;
+    }
+
     @Override
     public BlockState getBlock(final int x, final int y, final int z) {
-        final Extent inner = getExtent();
-        if (inner instanceof IChunkExtent<?> chunks) {
+        final IChunkExtent<?> chunks = chunkExtent();
+        if (chunks != null) {
             return chunks.getBlock(x, y, z);
         }
         return super.getBlock(x, y, z);
@@ -1435,8 +1451,8 @@ public class EditSession extends PassthroughExtent implements AutoCloseable {
 
     @Override
     public BlockState getBlock(final BlockVector3 position) {
-        final Extent inner = getExtent();
-        if (inner instanceof IChunkExtent<?> chunks) {
+        final IChunkExtent<?> chunks = chunkExtent();
+        if (chunks != null) {
             return chunks.getBlock(position.x(), position.y(), position.z());
         }
         return super.getBlock(position);
