@@ -290,12 +290,17 @@ public class FaweBukkit implements IFawe, Listener {
         if (plotSquared == null) {
             return;
         }
-        if (PlotSquared.get().getVersion().version[0] == 7) {
-            WEManager.weManager().addManager(new com.fastasyncworldedit.bukkit.regions.plotsquared.PlotSquaredFeature());
-            LOGGER.info("Plugin 'PlotSquared' v7 found. Using it now.");
-        } else {
-            LOGGER.error("Incompatible version of PlotSquared found. Please use PlotSquared v7.");
-            LOGGER.info("https://www.spigotmc.org/resources/77506/");
+        try {
+            if (PlotSquared.get().getVersion().version[0] == 7) {
+                WEManager.weManager().addManager(new com.fastasyncworldedit.bukkit.regions.plotsquared.PlotSquaredFeature());
+                LOGGER.info("Plugin 'PlotSquared' v7 found. Using it now.");
+            } else {
+                LOGGER.error("Incompatible version of PlotSquared found. Please use PlotSquared v7.");
+                LOGGER.info("https://www.spigotmc.org/resources/77506/");
+            }
+        } catch (LinkageError e) {
+            // PlotSquared is installed but its API is not reachable from this loader; skip the hook instead of failing
+            LOGGER.warn("PlotSquared is installed but its API is not visible to this plugin, skipping the hook");
         }
     }
 

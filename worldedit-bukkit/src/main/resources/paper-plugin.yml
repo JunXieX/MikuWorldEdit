@@ -12,15 +12,21 @@ dependencies:
     Vault:
       load: BEFORE
       required: false
-      join-classpath: false
+      # the Vault / WorldGuard / PlotSquared hooks compile against these APIs,
+      # so their classes have to be visible at runtime when the plugin is installed
+      join-classpath: true
     WorldGuard:
       load: BEFORE
       required: false
-      join-classpath: false
+      # the Vault / WorldGuard / PlotSquared hooks compile against these APIs,
+      # so their classes have to be visible at runtime when the plugin is installed
+      join-classpath: true
     PlotSquared:
       load: BEFORE
       required: false
-      join-classpath: false
+      # the Vault / WorldGuard / PlotSquared hooks compile against these APIs,
+      # so their classes have to be visible at runtime when the plugin is installed
+      join-classpath: true
 permissions:
   fawe.plotsquared:
     default: true

@@ -36,7 +36,14 @@ public class VaultResolver implements PermissionsResolver {
         if (server.getPluginManager().getPlugin("Vault") == null) {
             return null;
         }
-        RegisteredServiceProvider<Permission> rsp = server.getServicesManager().getRegistration(Permission.class);
+        final RegisteredServiceProvider<Permission> rsp;
+        try {
+            rsp = server.getServicesManager().getRegistration(Permission.class);
+        } catch (LinkageError e) {
+            // Vault is installed but its API classes are not reachable from this plugin loader: there is simply no
+            // Vault based permission provider here, which is not worth a warning and a stack trace
+            return null;
+        }
         if (rsp == null) {
             return null;
         }
