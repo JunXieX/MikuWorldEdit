@@ -176,7 +176,12 @@ public class BukkitTaskManager extends TaskManager {
             this.plugin.getServer().getScheduler().runTask(this.plugin, runnable);
             return;
         }
-        Bukkit.getGlobalRegionScheduler().execute(this.plugin, runnable);
+        Bukkit.getGlobalRegionScheduler().execute(this.plugin, PaperSupport.needsGlobalThreadTracking()
+                ? () -> {
+                    PaperSupport.recordGlobalThread();
+                    runnable.run();
+                }
+                : runnable);
     }
 
     @Override

@@ -296,6 +296,10 @@ public abstract class Regenerator {
             return tile == null ? state.toBaseBlock() : state.toBaseBlock(tile.linTag());
         }
 
+        private boolean hasBiomes() {
+            return biomes != null;
+        }
+
         private BiomeType biome(final int x, final int y, final int z) {
             if (biomes == null) {
                 return null;
@@ -317,14 +321,19 @@ public abstract class Regenerator {
         private final SourceChunk snapshot;
         private final BiomeType singleBiome;
         private final Region clip;
+        // a box selection is fully described by the slice, so the per position test can be skipped for it
+        private final boolean clipPerPosition;
         // biome cell writes already done for this chunk: one bit per 4x4x4 cell of every section
         private final long[] biomeCells;
+        private final boolean writeBiomes;
 
         private SnapshotPattern(final SourceChunk snapshot, final BiomeType singleBiome, final Region clip) {
             this.snapshot = snapshot;
             this.singleBiome = singleBiome;
             this.clip = clip;
-            this.biomeCells = new long[(snapshot.sections.length * 64 + 63) >> 6];
+            this.clipPerPosition = !(clip instanceof com.sk89q.worldedit.regions.CuboidRegion);
+            this.writeBiomes = singleBiome != null || snapshot.hasBiomes();
+            this.biomeCells = writeBiomes ? new long[(snapshot.sections.length * 64 + 63) >> 6] : null;
         }
 
         @Override
@@ -346,7 +355,7 @@ public abstract class Regenerator {
         public boolean apply(final Extent extent, final BlockVector3 get, final BlockVector3 set) throws WorldEditException {
             // The slice is the chunk column clipped to the selection box; a polygonal or cylindrical selection also
             // needs the per position test, otherwise the area around it would be overwritten.
-            if (!clip.contains(get)) {
+            if (clipPerPosition && !clip.contains(get)) {
                 return false;
             }
             final boolean placed = extent.setBlock(
@@ -355,6 +364,9 @@ public abstract class Regenerator {
                     set.z(),
                     snapshot.block(get.x() & 15, get.y(), get.z() & 15)
             );
+            if (!writeBiomes) {
+                return placed;
+            }
             // biomes are stored per 4x4x4 cell, so each cell is written once, at the first position of it that is
             // inside the selection
             final int section = (get.y() >> 4) - snapshot.minSection;

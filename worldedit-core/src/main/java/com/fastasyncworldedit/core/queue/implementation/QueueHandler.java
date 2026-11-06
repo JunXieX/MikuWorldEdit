@@ -334,6 +334,9 @@ public abstract class QueueHandler implements Trimable, Runnable {
      * @return Future representing task
      */
     public <T> Future<T> syncWhenFree(Runnable run, T value) {
+        if (routeAwayFromPump()) {
+            return sync(run);
+        }
         return sync(run, value, syncWhenFree);
     }
 
@@ -347,6 +350,9 @@ public abstract class QueueHandler implements Trimable, Runnable {
      * @return Future representing task
      */
     public <T> Future<T> syncWhenFree(Runnable run) {
+        if (routeAwayFromPump()) {
+            return sync(run);
+        }
         return sync(run, syncWhenFree);
     }
 
@@ -360,6 +366,9 @@ public abstract class QueueHandler implements Trimable, Runnable {
      * @return Future representing task
      */
     public <T> Future<T> syncWhenFree(Callable<T> call) throws Exception {
+        if (routeAwayFromPump()) {
+            return sync(call);
+        }
         return sync(call, syncWhenFree);
     }
 
@@ -373,6 +382,9 @@ public abstract class QueueHandler implements Trimable, Runnable {
      * @return Future representing task
      */
     public <T> Future<T> syncWhenFree(Supplier<T> supplier) {
+        if (routeAwayFromPump()) {
+            return sync(supplier);
+        }
         return sync(supplier, syncWhenFree);
     }
 

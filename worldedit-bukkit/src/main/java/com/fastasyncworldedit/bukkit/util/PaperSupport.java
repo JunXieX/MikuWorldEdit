@@ -51,10 +51,32 @@ public enum PaperSupport {
      */
     public static boolean isGlobalTickThread() {
         if (!FOLIA) {
-            return isPrimaryThread();
+            return org.bukkit.Bukkit.isPrimaryThread();
         }
-        return GLOBAL_TICK_THREAD != null && GLOBAL_TICK_THREAD.getAsBoolean();
+        if (GLOBAL_TICK_THREAD != null) {
+            return GLOBAL_TICK_THREAD.getAsBoolean();
+        }
+        // Older regionised builds do not expose the predicate. The thread that runs a global task is remembered
+        // instead, so a caller can still tell whether hopping is needed - guessing "no" here would deadlock.
+        return Thread.currentThread() == GLOBAL_THREAD;
     }
+
+    /**
+     * Records the thread a task submitted to the global region scheduler runs on. Only used when the platform does not
+     * expose {@code Bukkit.isGlobalTickThread()}.
+     */
+    public static void recordGlobalThread() {
+        GLOBAL_THREAD = Thread.currentThread();
+    }
+
+    /**
+     * @return true when callers have to determine the global thread themselves
+     */
+    public static boolean needsGlobalThreadTracking() {
+        return FOLIA && GLOBAL_TICK_THREAD == null;
+    }
+
+    private static volatile Thread GLOBAL_THREAD;
 
     private static final java.util.function.BooleanSupplier GLOBAL_TICK_THREAD = lookupGlobalTickThread();
 
@@ -71,10 +93,6 @@ public enum PaperSupport {
         } catch (NoSuchMethodException e) {
             return null;
         }
-    }
-
-    private static boolean isPrimaryThread() {
-        return org.bukkit.Bukkit.isPrimaryThread();
     }
 
     public static CompletableFuture<Boolean> teleportAsync(Entity entity, Location location) {

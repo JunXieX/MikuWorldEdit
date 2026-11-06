@@ -164,37 +164,69 @@ public class BukkitWorld extends AbstractWorld {
     @Override
     public List<com.sk89q.worldedit.entity.Entity> getEntities() {
         List<com.sk89q.worldedit.entity.Entity> list = new ArrayList<>();
-
-        for (World world : Bukkit.getWorlds()) {
-            for (Chunk chunk : world.getLoadedChunks()) {
-                for (Entity entity : chunk.getEntities()) {
-                    list.add(BukkitAdapter.adapt(entity));
-                }
+        // only this world's loaded chunks, and every read happens on the region that owns it
+        for (Chunk chunk : getWorld().getLoadedChunks()) {
+            for (Entity entity : entitiesIn(new BlockVector2(chunk.getX(), chunk.getZ()))) {
+                list.add(BukkitAdapter.adapt(entity));
             }
         }
         return list;
     }
 
     /**
-     * Entities of one chunk column. On a regionised server a whole-level listing would read other regions' state, so
-     * every caller walks chunks and lets each chunk read its own entities on the region that owns it.
+     * Entities of one chunk column, or an empty list when the chunk is not loaded. A whole-level listing would read
+     * other regions' state on a regionised server, and loading a chunk just to look for entities would generate
+     * terrain the caller never asked about.
      */
     private List<Entity> entitiesIn(final BlockVector2 chunk) {
         final World bukkitWorld = getWorld();
         if (TaskManager.taskManager().ownsRegion(this, chunk.x(), chunk.z())) {
-            return java.util.Arrays.asList(bukkitWorld.getChunkAt(chunk.x(), chunk.z()).getEntities());
+            return loadedEntities(bukkitWorld, chunk);
         }
-        return TaskManager.taskManager().submitAt(this, chunk.x(), chunk.z(), () ->
-                java.util.Arrays.asList(bukkitWorld.getChunkAt(chunk.x(), chunk.z()).getEntities())
+        return TaskManager.taskManager().submitAt(
+                this,
+                chunk.x(),
+                chunk.z(),
+                () -> loadedEntities(bukkitWorld, chunk)
         ).join();
+    }
+
+    private static List<Entity> loadedEntities(final World world, final BlockVector2 chunk) {
+        if (!world.isChunkLoaded(chunk.x(), chunk.z())) {
+            return java.util.Collections.emptyList();
+        }
+        return java.util.Arrays.asList(world.getChunkAt(chunk.x(), chunk.z()).getEntities());
     }
 
     @Override
     public int removeEntities(final Region region) {
-        List<com.sk89q.worldedit.entity.Entity> entities = getEntities(region);
-        // each wrapper removes itself on its own region, so there is nothing to synchronise here
-        return (int) entities.stream().filter(com.sk89q.worldedit.entity.Entity::remove).count();
+        int removed = 0;
+        for (BlockVector2 chunk : region.getChunks()) {
+            removed += removeEntitiesIn(chunk, region);
+        }
+        return removed;
     }
+
+    /**
+     * Removes the entities of one chunk that are inside the region, inside a single visit to the region that owns it.
+     */
+    private int removeEntitiesIn(final BlockVector2 chunk, final Region region) {
+        final java.util.function.Supplier<Integer> task = () -> {
+            int removed = 0;
+            for (Entity entity : loadedEntities(getWorld(), chunk)) {
+                if (region.contains(BukkitAdapter.asBlockVector(entity.getLocation())) && entity.isValid()) {
+                    entity.remove();
+                    removed++;
+                }
+            }
+            return removed;
+        };
+        if (TaskManager.taskManager().ownsRegion(this, chunk.x(), chunk.z())) {
+            return task.get();
+        }
+        return TaskManager.taskManager().submitAt(this, chunk.x(), chunk.z(), task).join();
+    }
+
 
     //FAWE: createEntity was moved to IChunkExtent to prevent issues with Async Entity Add.
 

@@ -116,9 +116,12 @@ public class BukkitEntity implements Entity {
         if (entity == null) {
             return true;
         }
+        if (!entity.isValid()) {
+            return true;
+        }
         final org.bukkit.Location location = entity.getLocation();
         // Removal reports nothing useful back and blocking here would park the calling region thread until the owning
-        // region ticks, so the hop is fire and forget.
+        // region ticks, so the hop is fire and forget. Callers that need the outcome work on the chunk directly.
         TaskManager.taskManager().submitAt(
                 BukkitAdapter.adapt(location.getWorld()),
                 location.getBlockX() >> 4,
@@ -127,9 +130,8 @@ public class BukkitEntity implements Entity {
                     final org.bukkit.entity.Entity current = entityRef.get();
                     if (current != null) {
                         current.remove();
-                        return true;
                     }
-                    return false;
+                    return true;
                 }
         );
         return true;
