@@ -166,7 +166,7 @@ public class BukkitWorld extends AbstractWorld {
         List<com.sk89q.worldedit.entity.Entity> list = new ArrayList<>();
         // only this world's loaded chunks, and every read happens on the region that owns it
         for (Chunk chunk : getWorld().getLoadedChunks()) {
-            for (Entity entity : entitiesIn(new BlockVector2(chunk.getX(), chunk.getZ()))) {
+            for (Entity entity : entitiesIn(BlockVector2.at(chunk.getX(), chunk.getZ()))) {
                 list.add(BukkitAdapter.adapt(entity));
             }
         }
