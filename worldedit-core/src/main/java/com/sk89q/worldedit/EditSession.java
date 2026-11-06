@@ -1351,9 +1351,10 @@ public class EditSession extends PassthroughExtent implements AutoCloseable {
         // Reset limit
         limit.set(originalLimit);
         try {
-            if (relighter != null && !(relighter instanceof NullRelighter) && !relighter.isFinished()) {
-                // Don't relight twice!
-                if (relighter.getLock().tryLock()) {
+            if (relighter != null && !(relighter instanceof NullRelighter)) {
+                // Don't relight twice! This lock is per session: failing to take it means this session already has a
+                // relight in flight. Relights of different sessions are serialised inside the relighter instead.
+                if (!relighter.isFinished() && relighter.getLock().tryLock()) {
                     try {
                         if (Settings.settings().LIGHTING.REMOVE_FIRST) {
                             relighter.removeAndRelight(true);
@@ -1363,9 +1364,6 @@ public class EditSession extends PassthroughExtent implements AutoCloseable {
                     } finally {
                         relighter.getLock().unlock();
                     }
-                } else {
-                    // Another edit is relighting the same world right now, so this edit keeps the light it inherited
-                    LOGGER.warn("Skipped relighting for an edit because another edit is relighting the same world");
                 }
             }
         } catch (Throwable e) {

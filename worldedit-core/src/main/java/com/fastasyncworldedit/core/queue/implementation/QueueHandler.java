@@ -268,7 +268,7 @@ public abstract class QueueHandler implements Trimable, Runnable {
      * @return Future representing task
      */
     public <T> Future<T> sync(Runnable run) {
-        if (TaskManager.taskManager().isFolia()) {
+        if (routeAwayFromPump()) {
             // the pump that drains this queue is not registered on regionised servers, so route the work through the
             // platform scheduler instead of parking it forever
             final FutureTask<T> result = new FutureTask<>(() -> {
@@ -282,6 +282,14 @@ public abstract class QueueHandler implements Trimable, Runnable {
     }
 
     /**
+     * Every {@code sync} variant has to take the same route on regionised servers, otherwise some callers park work on
+     * a queue that is never drained.
+     */
+    private boolean routeAwayFromPump() {
+        return TaskManager.taskManager().isFolia();
+    }
+
+    /**
      * Submit a task to be run on the main thread. Does not guarantee to be run on the next tick as FAWE will only operate to
      * maintain approx. 18 tps.
      *
@@ -290,6 +298,11 @@ public abstract class QueueHandler implements Trimable, Runnable {
      * @return Future representing task
      */
     public <T> Future<T> sync(Callable<T> call) throws Exception {
+        if (routeAwayFromPump()) {
+            final FutureTask<T> result = new FutureTask<>(call);
+            TaskManager.taskManager().task(result);
+            return result;
+        }
         return sync(call, syncTasks);
     }
 
@@ -302,7 +315,7 @@ public abstract class QueueHandler implements Trimable, Runnable {
      * @return Future representing task
      */
     public <T> Future<T> sync(Supplier<T> supplier) {
-        if (TaskManager.taskManager().isFolia()) {
+        if (routeAwayFromPump()) {
             final FutureTask<T> result = new FutureTask<>(supplier::get);
             TaskManager.taskManager().task(result);
             return result;

@@ -64,6 +64,7 @@ import org.apache.logging.log4j.Logger;
 import org.bukkit.Bukkit;
 import org.bukkit.Effect;
 import org.bukkit.TreeType;
+import org.bukkit.Chunk;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockState;
@@ -149,13 +150,12 @@ public class BukkitWorld extends AbstractWorld {
     public List<com.sk89q.worldedit.entity.Entity> getEntities(Region region) {
         World world = getWorld();
 
-        // World#getEntities walks every entity of the level, which is only allowed on the global tick thread: a
-        // region thread would be reading other regions' state.
-        List<Entity> ents = TaskManager.taskManager().submitGlobal(world::getEntities).join();
         List<com.sk89q.worldedit.entity.Entity> entities = new ArrayList<>();
-        for (Entity ent : ents) {
-            if (region.contains(BukkitAdapter.asBlockVector(ent.getLocation()))) {
-                entities.add(BukkitAdapter.adapt(ent));
+        for (BlockVector2 chunk : region.getChunks()) {
+            for (Entity entity : entitiesIn(chunk)) {
+                if (region.contains(BukkitAdapter.asBlockVector(entity.getLocation()))) {
+                    entities.add(BukkitAdapter.adapt(entity));
+                }
             }
         }
         return entities;
@@ -165,11 +165,28 @@ public class BukkitWorld extends AbstractWorld {
     public List<com.sk89q.worldedit.entity.Entity> getEntities() {
         List<com.sk89q.worldedit.entity.Entity> list = new ArrayList<>();
 
-        List<Entity> ents = TaskManager.taskManager().submitGlobal(getWorld()::getEntities).join();
-        for (Entity entity : ents) {
-            list.add(BukkitAdapter.adapt(entity));
+        for (World world : Bukkit.getWorlds()) {
+            for (Chunk chunk : world.getLoadedChunks()) {
+                for (Entity entity : chunk.getEntities()) {
+                    list.add(BukkitAdapter.adapt(entity));
+                }
+            }
         }
         return list;
+    }
+
+    /**
+     * Entities of one chunk column. On a regionised server a whole-level listing would read other regions' state, so
+     * every caller walks chunks and lets each chunk read its own entities on the region that owns it.
+     */
+    private List<Entity> entitiesIn(final BlockVector2 chunk) {
+        final World bukkitWorld = getWorld();
+        if (TaskManager.taskManager().ownsRegion(this, chunk.x(), chunk.z())) {
+            return java.util.Arrays.asList(bukkitWorld.getChunkAt(chunk.x(), chunk.z()).getEntities());
+        }
+        return TaskManager.taskManager().submitAt(this, chunk.x(), chunk.z(), () ->
+                java.util.Arrays.asList(bukkitWorld.getChunkAt(chunk.x(), chunk.z()).getEntities())
+        ).join();
     }
 
     @Override

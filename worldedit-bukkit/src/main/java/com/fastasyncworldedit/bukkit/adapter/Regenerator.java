@@ -17,7 +17,6 @@ import com.sk89q.worldedit.math.BlockVector3;
 import com.sk89q.worldedit.regions.CuboidRegion;
 import com.fastasyncworldedit.core.math.MutableBlockVector3;
 import com.sk89q.worldedit.regions.Region;
-import com.sk89q.worldedit.regions.RegionIntersection;
 import com.sk89q.worldedit.world.RegenOptions;
 import com.sk89q.worldedit.world.biome.BiomeType;
 import com.sk89q.worldedit.world.block.BaseBlock;
@@ -166,10 +165,7 @@ public abstract class Regenerator {
                 // the source queue refused the chunk (outside the safe range), nothing to copy
                 continue;
             }
-            // the slice is clipped to the chunk, but a polygonal or cylindrical selection is not a box: intersecting
-            // with the real region keeps the write inside it
-            final Region slice = new RegionIntersection(region, chunkSlice(chunkPos, min, max));
-            target.setBlocks(slice, (Pattern) new SnapshotPattern(snapshot, singleBiome));
+            target.setBlocks(chunkSlice(chunkPos, min, max), (Pattern) new SnapshotPattern(snapshot, singleBiome, region));
         }
     }
 
@@ -320,10 +316,14 @@ public abstract class Regenerator {
 
         private final SourceChunk snapshot;
         private final BiomeType singleBiome;
+        private final Region clip;
+        // biome cell writes already done for this chunk: one bit per 4x4x4 cell of every section
+        private final long[] biomeCells = new long[(snapshot.sections.length * 64 + 63) >> 6];
 
-        private SnapshotPattern(final SourceChunk snapshot, final BiomeType singleBiome) {
+        private SnapshotPattern(final SourceChunk snapshot, final BiomeType singleBiome, final Region clip) {
             this.snapshot = snapshot;
             this.singleBiome = singleBiome;
+            this.clip = clip;
         }
 
         @Override
@@ -343,15 +343,31 @@ public abstract class Regenerator {
 
         @Override
         public boolean apply(final Extent extent, final BlockVector3 get, final BlockVector3 set) throws WorldEditException {
+            // The slice is the chunk column clipped to the selection box; a polygonal or cylindrical selection also
+            // needs the per position test, otherwise the area around it would be overwritten.
+            if (!clip.contains(get)) {
+                return false;
+            }
             final boolean placed = extent.setBlock(
                     set.x(),
                     set.y(),
                     set.z(),
                     snapshot.block(get.x() & 15, get.y(), get.z() & 15)
             );
-            // biomes are stored per 4x4x4 cell, so only the cell origin needs to be written
-            if ((get.y() & 3) == 0 && (get.x() & 3) == 0 && (get.z() & 3) == 0) {
-                final BiomeType biome = singleBiome != null ? singleBiome : snapshot.biome(get.x() & 15, get.y(), get.z() & 15);
+            // biomes are stored per 4x4x4 cell, so each cell is written once, at the first position of it that is
+            // inside the selection
+            final int section = (get.y() >> 4) - snapshot.minSection;
+            final int cell = section >= 0 && section < snapshot.sections.length
+                    ? (section << 6)
+                    | (((get.y() & 15) >> 2) << 4)
+                    | (((get.z() & 15) >> 2) << 2)
+                    | ((get.x() & 15) >> 2)
+                    : -1;
+            if (cell >= 0 && (biomeCells[cell >> 6] & (1L << cell)) == 0) {
+                biomeCells[cell >> 6] |= 1L << cell;
+                final BiomeType biome = singleBiome != null
+                        ? singleBiome
+                        : snapshot.biome(get.x() & 15, get.y(), get.z() & 15);
                 if (biome != null) {
                     extent.setBiome(set.x(), set.y(), set.z(), biome);
                 }

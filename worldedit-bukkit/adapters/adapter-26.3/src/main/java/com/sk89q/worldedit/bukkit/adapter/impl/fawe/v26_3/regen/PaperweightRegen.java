@@ -231,18 +231,21 @@ public class PaperweightRegen extends Regenerator {
             }
         }
 
-        // shutting the chunk source down flushes region files, so the temporary directory may only be deleted after
-        // that finished; both steps therefore run as one task on the global thread
+        // Closing the chunk source flushes region files, so the temporary directory may only be deleted after that
+        // finished. Each step has its own try so a failure in one cannot skip the others. The join is safe on the
+        // global thread because submitGlobal runs inline there.
         try {
             TaskManager.taskManager().submitGlobal(() -> {
                 if (freshWorld != null) {
                     try {
                         freshWorld.getChunkSource().getDataStorage().cache.clear();
                         freshWorld.getChunkSource().close(false);
-                    } catch (Exception e) {
-                        throw new RuntimeException(e);
+                    } catch (Exception ignored) {
                     }
+                }
+                try {
                     removeWorldFromWorldsMap();
+                } catch (Exception ignored) {
                 }
                 try {
                     SafeFiles.tryHardToDeleteDir(tempDir);

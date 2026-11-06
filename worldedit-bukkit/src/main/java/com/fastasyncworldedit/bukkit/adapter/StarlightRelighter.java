@@ -16,10 +16,8 @@ import org.jetbrains.annotations.NotNull;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 import java.util.function.IntConsumer;
@@ -39,12 +37,12 @@ public abstract class StarlightRelighter<SERVER_LEVEL, CHUNK_POS> implements Rel
     private static final int CHUNKS_PER_BATCH_SQRT_LOG2 = 5; // for shifting
 
     /**
-     * Starlight is not reentrant: two edits relighting overlapping chunks at the same time write into the same
-     * {@code DataLayer} instances. The guard is therefore shared per world - a session that loses the tryLock skips
-     * its own relight instead of corrupting the running one, and edits in other worlds are not affected.
+     * Starlight is not reentrant: two edits relighting at the same time write into the same {@code DataLayer}
+     * instances. The per session lock of {@link #getLock()} only serialises one session's own flushes, so the actual
+     * relight call is guarded separately here - waiting instead of skipping keeps every edit's lighting correct.
      */
-    private static final Map<Object, ReentrantLock> RELIGHT_LOCKS = new ConcurrentHashMap<>();
-    private final ReentrantLock relightLock;
+    private static final ReentrantLock INVOKE_LOCK = new ReentrantLock();
+    private final ReentrantLock lock = new ReentrantLock();
     private final Long2ObjectLinkedOpenHashMap<LongSet> regions = new Long2ObjectLinkedOpenHashMap<>();
     private final ReentrantLock areaLock = new ReentrantLock();
     private final NMSRelighter delegate;
@@ -53,7 +51,6 @@ public abstract class StarlightRelighter<SERVER_LEVEL, CHUNK_POS> implements Rel
     protected StarlightRelighter(SERVER_LEVEL serverLevel, IQueueExtent<?> queue) {
         this.serverLevel = serverLevel;
         this.delegate = new NMSRelighter(queue);
-        this.relightLock = RELIGHT_LOCKS.computeIfAbsent(serverLevel, key -> new ReentrantLock());
     }
 
     protected Set<CHUNK_POS> convertChunkKeysToChunkPos(LongSet chunks) {
@@ -112,14 +109,19 @@ public abstract class StarlightRelighter<SERVER_LEVEL, CHUNK_POS> implements Rel
             // trigger chunk load and apply ticket on main thread
             List<CompletableFuture<?>> futures = chunkLoadFutures(coords);
             // collect futures and trigger relight once all chunks are loaded
-            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).thenAccept(v ->
+            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).thenAccept(v -> {
+                INVOKE_LOCK.lock();
+                try {
                     invokeRelight(
                             coords,
                             c -> {
                             }, // no callback for single chunks required
                             postProcessCallback(andThen, coords)
-                    )
-            );
+                    );
+                } finally {
+                    INVOKE_LOCK.unlock();
+                }
+            });
         });
     }
 
@@ -193,7 +195,7 @@ public abstract class StarlightRelighter<SERVER_LEVEL, CHUNK_POS> implements Rel
 
     @Override
     public ReentrantLock getLock() {
-        return this.relightLock;
+        return this.lock;
     }
 
     @Override

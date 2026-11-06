@@ -64,6 +64,16 @@ public class BukkitTaskManager extends TaskManager {
     }
 
     @Override
+    public boolean isGlobalTickThread() {
+        if (!this.folia) {
+            return Fawe.isMainThread();
+        }
+        // Only the global region thread may run work that is not tied to a location; the per-region threads report
+        // true for isPrimaryThread() as well, hence the dedicated check.
+        return Bukkit.isGlobalTickThread();
+    }
+
+    @Override
     public boolean ownsRegion(@Nullable com.sk89q.worldedit.world.World world, int chunkX, int chunkZ) {
         if (!this.folia) {
             return Fawe.isMainThread();
@@ -196,8 +206,8 @@ public class BukkitTaskManager extends TaskManager {
     }
 
     /**
-     * Cancel every task this manager registered. Called when the plugin is disabled: the region schedulers keep
-     * queued work past that point and would run it against unloaded plugin classes.
+     * Cancel every task this manager registered. The scheduler wide cancel on shutdown does not reach these handles,
+     * so they are cancelled one by one and the map is emptied with them.
      */
     public void cancelAll() {
         for (final ScheduledTask task : SCHEDULED_TASKS.values()) {

@@ -404,6 +404,19 @@ public abstract class TaskManager {
     }
 
     /**
+     * Whether the current thread is the one that runs work not tied to any location.
+     * <p>
+     * On a regionised server this is only the global region thread: the other region threads report
+     * {@link #isTickingThread()} but belong to their own region and must not run global work.
+     * </p>
+     *
+     * @return true when the current thread may run global work without a hop
+     */
+    public boolean isGlobalTickThread() {
+        return Fawe.isMainThread();
+    }
+
+    /**
      * Whether the current thread owns the region containing the given chunk, and may therefore read or write that
      * chunk's world state without a hop.
      *
@@ -505,7 +518,7 @@ public abstract class TaskManager {
      * @return future completed with the task's result
      */
     public <T> CompletableFuture<T> submitGlobal(@Nonnull final Supplier<T> supplier) {
-        if (isTickingThread()) {
+        if (isGlobalTickThread()) {
             try {
                 return CompletableFuture.completedFuture(supplier.get());
             } catch (Throwable t) {
