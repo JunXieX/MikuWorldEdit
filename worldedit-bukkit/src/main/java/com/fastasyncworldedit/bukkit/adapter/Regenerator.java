@@ -168,10 +168,8 @@ public abstract class Regenerator {
             }
             // the slice is clipped to the chunk, but a polygonal or cylindrical selection is not a box: intersecting
             // with the real region keeps the write inside it
-            target.setBlocks(
-                    new RegionIntersection(region, chunkSlice(chunkPos, min, max)),
-                    new SnapshotPattern(snapshot, singleBiome)
-            );
+            final Region slice = new RegionIntersection(region, chunkSlice(chunkPos, min, max));
+            target.setBlocks(slice, (Pattern) new SnapshotPattern(snapshot, singleBiome));
         }
     }
 
