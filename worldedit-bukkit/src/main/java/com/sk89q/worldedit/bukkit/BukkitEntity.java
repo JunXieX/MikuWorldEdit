@@ -117,23 +117,22 @@ public class BukkitEntity implements Entity {
             return true;
         }
         final org.bukkit.Location location = entity.getLocation();
-        return TaskManager.taskManager().submitAt(
+        // Removal reports nothing useful back and blocking here would park the calling region thread until the owning
+        // region ticks, so the hop is fire and forget.
+        TaskManager.taskManager().submitAt(
                 BukkitAdapter.adapt(location.getWorld()),
                 location.getBlockX() >> 4,
                 location.getBlockZ() >> 4,
                 () -> {
                     final org.bukkit.entity.Entity current = entityRef.get();
-                    if (current == null) {
+                    if (current != null) {
+                        current.remove();
                         return true;
                     }
-                    try {
-                        current.remove();
-                    } catch (UnsupportedOperationException e) {
-                        return false;
-                    }
-                    return current.isDead();
+                    return false;
                 }
-        ).join();
+        );
+        return true;
     }
 
     @SuppressWarnings("unchecked")

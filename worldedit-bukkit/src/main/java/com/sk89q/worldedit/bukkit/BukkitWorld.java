@@ -149,7 +149,9 @@ public class BukkitWorld extends AbstractWorld {
     public List<com.sk89q.worldedit.entity.Entity> getEntities(Region region) {
         World world = getWorld();
 
-        List<Entity> ents = TaskManager.taskManager().sync(world::getEntities);
+        // World#getEntities walks every entity of the level, which is only allowed on the global tick thread: a
+        // region thread would be reading other regions' state.
+        List<Entity> ents = TaskManager.taskManager().submitGlobal(world::getEntities).join();
         List<com.sk89q.worldedit.entity.Entity> entities = new ArrayList<>();
         for (Entity ent : ents) {
             if (region.contains(BukkitAdapter.asBlockVector(ent.getLocation()))) {
@@ -163,7 +165,7 @@ public class BukkitWorld extends AbstractWorld {
     public List<com.sk89q.worldedit.entity.Entity> getEntities() {
         List<com.sk89q.worldedit.entity.Entity> list = new ArrayList<>();
 
-        List<Entity> ents = TaskManager.taskManager().sync(getWorld()::getEntities);
+        List<Entity> ents = TaskManager.taskManager().submitGlobal(getWorld()::getEntities).join();
         for (Entity entity : ents) {
             list.add(BukkitAdapter.adapt(entity));
         }
@@ -173,9 +175,8 @@ public class BukkitWorld extends AbstractWorld {
     @Override
     public int removeEntities(final Region region) {
         List<com.sk89q.worldedit.entity.Entity> entities = getEntities(region);
-        return TaskManager.taskManager().sync(() -> entities.stream()
-                .mapToInt(entity -> entity.remove() ? 1 : 0).sum()
-        );
+        // each wrapper removes itself on its own region, so there is nothing to synchronise here
+        return (int) entities.stream().filter(com.sk89q.worldedit.entity.Entity::remove).count();
     }
 
     //FAWE: createEntity was moved to IChunkExtent to prevent issues with Async Entity Add.

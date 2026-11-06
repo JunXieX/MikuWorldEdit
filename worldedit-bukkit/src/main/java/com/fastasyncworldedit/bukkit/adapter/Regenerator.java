@@ -15,7 +15,9 @@ import com.sk89q.worldedit.function.pattern.Pattern;
 import com.sk89q.worldedit.math.BlockVector2;
 import com.sk89q.worldedit.math.BlockVector3;
 import com.sk89q.worldedit.regions.CuboidRegion;
+import com.fastasyncworldedit.core.math.MutableBlockVector3;
 import com.sk89q.worldedit.regions.Region;
+import com.sk89q.worldedit.regions.RegionIntersection;
 import com.sk89q.worldedit.world.RegenOptions;
 import com.sk89q.worldedit.world.biome.BiomeType;
 import com.sk89q.worldedit.world.block.BaseBlock;
@@ -164,7 +166,12 @@ public abstract class Regenerator {
                 // the source queue refused the chunk (outside the safe range), nothing to copy
                 continue;
             }
-            target.setBlocks(chunkSlice(chunkPos, min, max), new SnapshotPattern(snapshot, singleBiome));
+            // the slice is clipped to the chunk, but a polygonal or cylindrical selection is not a box: intersecting
+            // with the real region keeps the write inside it
+            target.setBlocks(
+                    new RegionIntersection(region, chunkSlice(chunkPos, min, max)),
+                    new SnapshotPattern(snapshot, singleBiome)
+            );
         }
     }
 
@@ -234,6 +241,9 @@ public abstract class Regenerator {
         private final int minSection;
         private final Map<BlockVector3, FaweCompoundTag> tiles;
         private final BiomeType[][] biomes;
+        private final boolean[] sectionsWithTiles;
+        // reused by every tile lookup of this chunk: HashMap#get never stores the key it is given
+        private final MutableBlockVector3 lookup = new MutableBlockVector3();
 
         private SourceChunk(
                 final int chunkX,
@@ -249,6 +259,13 @@ public abstract class Regenerator {
             this.minSection = minSection;
             this.tiles = tiles;
             this.biomes = biomes;
+            this.sectionsWithTiles = new boolean[sections.length];
+            for (BlockVector3 position : tiles.keySet()) {
+                final int section = (position.y() >> 4) - minSection;
+                if (section >= 0 && section < sectionsWithTiles.length) {
+                    sectionsWithTiles[section] = true;
+                }
+            }
         }
 
         private char ordinal(final int x, final int y, final int z) {
@@ -272,7 +289,16 @@ public abstract class Regenerator {
             if (tiles.isEmpty()) {
                 return state.toBaseBlock();
             }
-            final FaweCompoundTag tile = tiles.get(BlockVector3.at((chunkX << 4) + (x & 15), y, (chunkZ << 4) + (z & 15)));
+            // only sections that actually contain a tile entity have to be looked up, and one vector is reused
+            final int section = (y >> 4) - minSection;
+            if (section < 0 || section >= sectionsWithTiles.length || !sectionsWithTiles[section]) {
+                return state.toBaseBlock();
+            }
+            final FaweCompoundTag tile = tiles.get(lookup.setComponents(
+                    (chunkX << 4) + (x & 15),
+                    y,
+                    (chunkZ << 4) + (z & 15)
+            ));
             return tile == null ? state.toBaseBlock() : state.toBaseBlock(tile.linTag());
         }
 
@@ -325,9 +351,12 @@ public abstract class Regenerator {
                     set.z(),
                     snapshot.block(get.x() & 15, get.y(), get.z() & 15)
             );
-            final BiomeType biome = singleBiome != null ? singleBiome : snapshot.biome(get.x() & 15, get.y(), get.z() & 15);
-            if (biome != null) {
-                extent.setBiome(set.x(), set.y(), set.z(), biome);
+            // biomes are stored per 4x4x4 cell, so only the cell origin needs to be written
+            if ((get.y() & 3) == 0 && (get.x() & 3) == 0 && (get.z() & 3) == 0) {
+                final BiomeType biome = singleBiome != null ? singleBiome : snapshot.biome(get.x() & 15, get.y(), get.z() & 15);
+                if (biome != null) {
+                    extent.setBiome(set.x(), set.y(), set.z(), biome);
+                }
             }
             return placed;
         }

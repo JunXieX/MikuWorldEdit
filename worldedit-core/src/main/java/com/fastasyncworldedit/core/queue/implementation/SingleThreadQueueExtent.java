@@ -493,29 +493,29 @@ public class SingleThreadQueueExtent extends ExtentBatchProcessorHolder implemen
     public synchronized void flush() {
         if (!chunks.isEmpty()) {
             getChunkLock.lock();
-            if (MemUtil.isMemoryLimited()) {
-                while (!chunks.isEmpty()) {
-                    IQueueChunk chunk = chunks.removeFirst();
-                    this.lastChunk.compareAndExchange(chunk, null);
-                    final Future future = submitUnchecked(chunk);
-                    if (future != null && !future.isDone()) {
-                        pollSubmissions(Settings.settings().QUEUE.PARALLEL_THREADS, true);
-                        submissions.add(future);
-                    }
-                }
-            } else {
-                while (!chunks.isEmpty()) {
-                    IQueueChunk chunk = chunks.removeFirst();
-                    this.lastChunk.compareAndExchange(chunk, null);
-                    final Future future = submitUnchecked(chunk);
-                    if (future != null && !future.isDone()) {
-                        submissions.add(future);
-                    }
-                }
+            try {
+                drainChunks();
+            } finally {
+                getChunkLock.unlock();
             }
-            getChunkLock.unlock();
         }
         pollSubmissions(0, true);
+    }
+
+    private void drainChunks() {
+        final boolean memoryLimited = MemUtil.isMemoryLimited();
+        while (!chunks.isEmpty()) {
+            IQueueChunk chunk = chunks.removeFirst();
+            this.lastChunk.compareAndExchange(chunk, null);
+            final Future future = submitUnchecked(chunk);
+            if (future != null && !future.isDone()) {
+                if (memoryLimited) {
+                    // keep the amount of queued work bounded while the heap is under pressure
+                    pollSubmissions(Settings.settings().QUEUE.PARALLEL_THREADS, true);
+                }
+                submissions.add(future);
+            }
+        }
     }
 
     @Override

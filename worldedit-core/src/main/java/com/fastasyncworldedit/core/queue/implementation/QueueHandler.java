@@ -268,6 +268,11 @@ public abstract class QueueHandler implements Trimable, Runnable {
      * @return Future representing task
      */
     public <T> Future<T> sync(Runnable run) {
+        if (TaskManager.taskManager().isFolia()) {
+            // the pump that drains this queue is not registered on regionised servers, so route the work through the
+            // platform scheduler instead of parking it forever
+            return TaskManager.taskManager().submitGlobal(run);
+        }
         return sync(run, syncTasks);
     }
 
@@ -292,6 +297,9 @@ public abstract class QueueHandler implements Trimable, Runnable {
      * @return Future representing task
      */
     public <T> Future<T> sync(Supplier<T> supplier) {
+        if (TaskManager.taskManager().isFolia()) {
+            return TaskManager.taskManager().submitGlobal(supplier);
+        }
         return sync(supplier, syncTasks);
     }
 

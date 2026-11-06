@@ -776,7 +776,7 @@ public class PaperweightGetBlocks extends AbstractBukkitGetBlocks<ServerLevel, L
             }
             if (this.sections[layer] != section) {
                 // Not sure why it's funky, but it's what I did in commit fda7d00747abe97d7891b80ed8bb88d97e1c70d1 and I don't want to touch it >dords
-                this.sections[layer] = new LevelChunkSection[]{section}.clone()[0];
+                this.sections[layer] = section;
             }
         } finally {
             sectionLock.writeLock().unlock();

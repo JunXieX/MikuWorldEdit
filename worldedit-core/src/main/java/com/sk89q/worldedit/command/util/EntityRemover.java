@@ -19,7 +19,6 @@
 
 package com.sk89q.worldedit.command.util;
 
-import com.fastasyncworldedit.core.util.TaskManager;
 import com.sk89q.worldedit.entity.metadata.EntityProperties;
 import com.sk89q.worldedit.function.EntityFunction;
 
@@ -147,16 +146,8 @@ public class EntityRemover {
             EntityProperties registryType = entity.getFacet(EntityProperties.class);
             if (registryType != null) {
                 if (type.matches(registryType)) {
-                    //FAWE start - the entity belongs to exactly one region on a regionised server
-                    final com.sk89q.worldedit.util.Location location = entity.getLocation();
-                    final com.sk89q.worldedit.math.BlockVector3 position = location.toVector().toBlockPoint();
-                    TaskManager.taskManager().submitAt(
-                            com.fastasyncworldedit.core.wrappers.WorldWrapper.unwrap(location.getExtent()),
-                            position.x() >> 4,
-                            position.z() >> 4,
-                            entity::remove
-                    ).join();
-                    //FAWE end
+                    // the entity wrapper hops to its owning region itself, so this must not block here
+                    entity.remove();
                     return true;
                 }
             }

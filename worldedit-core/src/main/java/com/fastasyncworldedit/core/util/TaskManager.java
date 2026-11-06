@@ -472,11 +472,55 @@ public abstract class TaskManager {
 
     /**
      * Run work that is not tied to any location on the server's global tick thread.
+     * <p>
+     * Returns once the work has been handed over, not once it has run: callers that need the result have to wait on the
+     * returned future.
+     * </p>
      *
      * @param runnable task to run
+     * @return future completed once the task ran
      */
-    public void executeGlobal(@Nonnull final Runnable runnable) {
-        task(runnable);
+    public CompletableFuture<Void> executeGlobal(@Nonnull final Runnable runnable) {
+        return submitGlobal(runnable);
+    }
+
+    /**
+     * Run work that is not tied to any location on the server's global tick thread and return its result.
+     *
+     * @param runnable task to run
+     * @return future completed once the task ran
+     */
+    public CompletableFuture<Void> submitGlobal(@Nonnull final Runnable runnable) {
+        return submitGlobal(() -> {
+            runnable.run();
+            return null;
+        });
+    }
+
+    /**
+     * Run work that is not tied to any location on the server's global tick thread and return its result.
+     *
+     * @param supplier task to run
+     * @param <T>      result type
+     * @return future completed with the task's result
+     */
+    public <T> CompletableFuture<T> submitGlobal(@Nonnull final Supplier<T> supplier) {
+        if (isTickingThread()) {
+            try {
+                return CompletableFuture.completedFuture(supplier.get());
+            } catch (Throwable t) {
+                return CompletableFuture.failedFuture(t);
+            }
+        }
+        final CompletableFuture<T> result = new CompletableFuture<>();
+        task(() -> {
+            try {
+                result.complete(supplier.get());
+            } catch (Throwable t) {
+                result.completeExceptionally(t);
+            }
+        });
+        return result;
     }
 
 

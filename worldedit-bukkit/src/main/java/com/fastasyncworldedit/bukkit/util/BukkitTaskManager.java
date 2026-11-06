@@ -13,7 +13,6 @@ import javax.annotation.Nullable;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
@@ -196,6 +195,17 @@ public class BukkitTaskManager extends TaskManager {
         }, Math.max(1L, delay) * 50L, TimeUnit.MILLISECONDS));
     }
 
+    /**
+     * Cancel every task this manager registered. Called when the plugin is disabled: the region schedulers keep
+     * queued work past that point and would run it against unloaded plugin classes.
+     */
+    public void cancelAll() {
+        for (final ScheduledTask task : SCHEDULED_TASKS.values()) {
+            task.cancel();
+        }
+        SCHEDULED_TASKS.clear();
+    }
+
     @Override
     public void cancel(final int task) {
         if (task == -1) {
@@ -223,16 +233,6 @@ public class BukkitTaskManager extends TaskManager {
     }
 
     @Override
-    public <T> T syncWhenFree(@Nonnull final com.fastasyncworldedit.core.util.task.RunnableVal<T> function) {
-        return sync(function);
-    }
-
-    @Override
-    public <T> T syncWhenFree(@Nonnull final Supplier<T> supplier) {
-        return sync(supplier);
-    }
-
-    @Override
     public <T> T sync(final Supplier<T> function) {
         if (!this.folia) {
             return super.sync(function);
@@ -242,22 +242,9 @@ public class BukkitTaskManager extends TaskManager {
             // handing the work to the async pool, which cannot touch world state at all
             return function.get();
         }
-        final CompletableFuture<T> future = new CompletableFuture<>();
-        async(() -> {
-            try {
-                future.complete(function.get());
-            } catch (Throwable t) {
-                future.completeExceptionally(t);
-            }
-        });
-        try {
-            return future.get();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new RuntimeException(e);
-        } catch (ExecutionException e) {
-            throw new RuntimeException(e.getCause());
-        }
+        // The async pool may not touch world state, and almost every sync() caller does: park the work on the global
+        // region instead, which is the only tick thread that can be reached from an arbitrary thread.
+        return submitGlobal(function).join();
     }
 
     private org.bukkit.World toBukkitWorld(@Nullable com.sk89q.worldedit.world.World world) {

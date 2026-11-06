@@ -65,17 +65,22 @@ public class FaweBukkit implements IFawe, Listener {
         try {
             Fawe.set(this);
             Fawe.setupInjector();
-            try {
-                new BrushListener(plugin);
-            } catch (Throwable e) {
-                LOGGER.error("Brush Listener Failed", e);
-            }
-            if (PaperSupport.isPaper() && Settings.settings().EXPERIMENTAL.DYNAMIC_CHUNK_RENDERING > 1) {
-                new RenderListener(plugin);
-            }
         } catch (final Throwable e) {
             // Let the platform disable the plugin: continuing would run every other call against a half built FAWE
-            throw new IllegalStateException("FastAsyncWorldEdit failed to initialise", e);
+            throw new IllegalStateException("MikuWorldEdit failed to initialise", e);
+        }
+        // The listeners below are optional conveniences, a failure there must not take the whole plugin down.
+        try {
+            new BrushListener(plugin);
+        } catch (final Throwable e) {
+            LOGGER.error("Brush Listener Failed", e);
+        }
+        if (PaperSupport.isPaper() && Settings.settings().EXPERIMENTAL.DYNAMIC_CHUNK_RENDERING > 1) {
+            try {
+                new RenderListener(plugin);
+            } catch (final Throwable e) {
+                LOGGER.error("Render Listener Failed", e);
+            }
         }
 
         platformAdapter = new NMSAdapter();

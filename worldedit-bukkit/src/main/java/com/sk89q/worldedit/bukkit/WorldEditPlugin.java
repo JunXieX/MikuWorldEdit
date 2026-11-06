@@ -448,16 +448,17 @@ public class WorldEditPlugin extends JavaPlugin {
         if (!legacy.isDirectory()) {
             return;
         }
-        try {
-            java.nio.file.Files.walk(legacy.toPath()).forEach(source -> {
+        try (java.util.stream.Stream<java.nio.file.Path> files = java.nio.file.Files.walk(legacy.toPath())) {
+            files.filter(java.nio.file.Files::isRegularFile).forEach(source -> {
+                final java.nio.file.Path relative = legacy.toPath().relativize(source);
+                // history and clipboard are large caches that rebuild themselves, they are never migrated
+                if (relative.startsWith("history") || relative.startsWith("clipboard")) {
+                    return;
+                }
                 try {
-                    final java.nio.file.Path destination =
-                            target.toPath().resolve(legacy.toPath().relativize(source));
-                    if (java.nio.file.Files.isDirectory(source)) {
-                        java.nio.file.Files.createDirectories(destination);
-                    } else {
-                        java.nio.file.Files.copy(source, destination, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                    }
+                    final java.nio.file.Path destination = target.toPath().resolve(relative);
+                    java.nio.file.Files.createDirectories(destination.getParent());
+                    java.nio.file.Files.copy(source, destination, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
                 } catch (java.io.IOException ignored) {
                 }
             });
@@ -484,6 +485,8 @@ public class WorldEditPlugin extends JavaPlugin {
             // The Bukkit scheduler does not exist on regionised servers; tasks live on the region schedulers
             Bukkit.getGlobalRegionScheduler().cancelTasks(this);
             Bukkit.getAsyncScheduler().cancelTasks(this);
+            ((com.fastasyncworldedit.bukkit.util.BukkitTaskManager) com.fastasyncworldedit.core.util.TaskManager.taskManager())
+                    .cancelAll();
         } else {
             this.getServer().getScheduler().cancelTasks(this);
         }

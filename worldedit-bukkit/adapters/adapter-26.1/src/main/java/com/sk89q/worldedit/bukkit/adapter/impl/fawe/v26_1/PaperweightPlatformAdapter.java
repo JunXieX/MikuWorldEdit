@@ -426,11 +426,6 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
         if (levelChunk == null) {
             return;
         }
-        final java.util.List<ServerPlayer> viewers = nearbyPlayers(nmsWorld, levelChunk.getPos());
-        if (viewers.isEmpty()) {
-            // nobody can see this chunk, so assembling the packet would be wasted work
-            return;
-        }
         StampLockHolder lockHolder = new StampLockHolder();
         NMSAdapter.beginChunkPacketSend(nmsWorld.getWorld().getName(), pair, lockHolder);
         if (lockHolder.chunkLock == null) {
@@ -438,6 +433,11 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
         }
         final Runnable packetTask = () -> {
             try {
+                // the viewer index is maintained by the server threads, so it may only be read here
+                final java.util.List<ServerPlayer> viewers = nearbyPlayers(nmsWorld, levelChunk.getPos());
+                if (viewers.isEmpty()) {
+                    return;
+                }
                 ChunkPos pos = levelChunk.getPos();
                 ClientboundLevelChunkWithLightPacket packet;
                 if (PaperSupport.isPaper()) {

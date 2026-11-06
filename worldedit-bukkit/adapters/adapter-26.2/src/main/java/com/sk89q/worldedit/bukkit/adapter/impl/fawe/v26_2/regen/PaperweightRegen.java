@@ -229,31 +229,24 @@ public class PaperweightRegen extends Regenerator {
             }
         }
 
-        //shutdown chunk provider
+        // shutting the chunk source down flushes region files, so the temporary directory may only be deleted after
+        // that finished; both steps therefore run as one task on the global thread
         try {
-            TaskManager.taskManager().executeGlobal(() -> {
-                if (freshWorld == null) {
-                    return;
+            TaskManager.taskManager().submitGlobal(() -> {
+                if (freshWorld != null) {
+                    try {
+                        freshWorld.getChunkSource().getDataStorage().cache.clear();
+                        freshWorld.getChunkSource().close(false);
+                    } catch (Exception e) {
+                        throw new RuntimeException(e);
+                    }
+                    removeWorldFromWorldsMap();
                 }
                 try {
-                    freshWorld.getChunkSource().getDataStorage().cache.clear();
-                    freshWorld.getChunkSource().close(false);
-                } catch (Exception e) {
-                    throw new RuntimeException(e);
+                    SafeFiles.tryHardToDeleteDir(tempDir);
+                } catch (Exception ignored) {
                 }
-            });
-        } catch (Exception ignored) {
-        }
-
-        //remove world from server
-        try {
-            TaskManager.taskManager().executeGlobal(this::removeWorldFromWorldsMap);
-        } catch (Exception ignored) {
-        }
-
-        //delete directory
-        try {
-            SafeFiles.tryHardToDeleteDir(tempDir);
+            }).join();
         } catch (Exception ignored) {
         }
     }

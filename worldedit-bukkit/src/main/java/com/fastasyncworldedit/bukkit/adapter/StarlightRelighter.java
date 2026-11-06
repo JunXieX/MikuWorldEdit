@@ -16,8 +16,10 @@ import org.jetbrains.annotations.NotNull;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 import java.util.function.IntConsumer;
@@ -38,10 +40,11 @@ public abstract class StarlightRelighter<SERVER_LEVEL, CHUNK_POS> implements Rel
 
     /**
      * Starlight is not reentrant: two edits relighting overlapping chunks at the same time write into the same
-     * {@code DataLayer} instances, so the guard has to be shared by every relighter instead of held per session. A
-     * session that loses the tryLock skips its own relight instead of corrupting the running one.
+     * {@code DataLayer} instances. The guard is therefore shared per world - a session that loses the tryLock skips
+     * its own relight instead of corrupting the running one, and edits in other worlds are not affected.
      */
-    private static final ReentrantLock RELIGHT_LOCK = new ReentrantLock();
+    private static final Map<Object, ReentrantLock> RELIGHT_LOCKS = new ConcurrentHashMap<>();
+    private final ReentrantLock relightLock;
     private final Long2ObjectLinkedOpenHashMap<LongSet> regions = new Long2ObjectLinkedOpenHashMap<>();
     private final ReentrantLock areaLock = new ReentrantLock();
     private final NMSRelighter delegate;
@@ -50,6 +53,7 @@ public abstract class StarlightRelighter<SERVER_LEVEL, CHUNK_POS> implements Rel
     protected StarlightRelighter(SERVER_LEVEL serverLevel, IQueueExtent<?> queue) {
         this.serverLevel = serverLevel;
         this.delegate = new NMSRelighter(queue);
+        this.relightLock = RELIGHT_LOCKS.computeIfAbsent(serverLevel, key -> new ReentrantLock());
     }
 
     protected Set<CHUNK_POS> convertChunkKeysToChunkPos(LongSet chunks) {
@@ -189,7 +193,7 @@ public abstract class StarlightRelighter<SERVER_LEVEL, CHUNK_POS> implements Rel
 
     @Override
     public ReentrantLock getLock() {
-        return RELIGHT_LOCK;
+        return this.relightLock;
     }
 
     @Override
