@@ -246,7 +246,7 @@ public class BukkitPlayer extends AbstractPlayerActor {
         final Location target = new Location(finalWorld, pos.x(), pos.y(), pos.z(), yaw, pitch);
         // A teleport belongs to the player's own region, so it is not handed to the global thread.
         return TaskManager.taskManager().submitAt(
-                this,
+                BukkitAdapter.adapt(finalWorld),
                 target.getBlockX() >> 4,
                 target.getBlockZ() >> 4,
                 () -> player.teleport(target)

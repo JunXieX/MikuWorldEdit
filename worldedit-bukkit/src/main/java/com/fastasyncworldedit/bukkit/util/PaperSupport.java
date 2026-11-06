@@ -39,6 +39,44 @@ public enum PaperSupport {
         return FOLIA;
     }
 
+    /**
+     * Whether the current thread is the one that runs work not tied to a location.
+     * <p>
+     * {@code Bukkit.isGlobalTickThread()} only exists on newer API versions than the one this project compiles against,
+     * so it is looked up once. When it is missing the answer falls back to "not the global thread", which makes callers
+     * hop instead of running inline - slower, never wrong.
+     * </p>
+     *
+     * @return true when the current thread may run global work without a hop
+     */
+    public static boolean isGlobalTickThread() {
+        if (!FOLIA) {
+            return isPrimaryThread();
+        }
+        return GLOBAL_TICK_THREAD != null && GLOBAL_TICK_THREAD.getAsBoolean();
+    }
+
+    private static final java.util.function.BooleanSupplier GLOBAL_TICK_THREAD = lookupGlobalTickThread();
+
+    private static java.util.function.BooleanSupplier lookupGlobalTickThread() {
+        try {
+            final java.lang.reflect.Method method = org.bukkit.Bukkit.class.getMethod("isGlobalTickThread");
+            return () -> {
+                try {
+                    return (boolean) method.invoke(null);
+                } catch (ReflectiveOperationException e) {
+                    return false;
+                }
+            };
+        } catch (NoSuchMethodException e) {
+            return null;
+        }
+    }
+
+    private static boolean isPrimaryThread() {
+        return org.bukkit.Bukkit.isPrimaryThread();
+    }
+
     public static CompletableFuture<Boolean> teleportAsync(Entity entity, Location location) {
         if (isPaper()) {
             return entity.teleportAsync(location);

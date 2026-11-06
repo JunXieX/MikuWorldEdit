@@ -70,7 +70,7 @@ public class BukkitTaskManager extends TaskManager {
         }
         // Only the global region thread may run work that is not tied to a location; the per-region threads report
         // true for isPrimaryThread() as well, hence the dedicated check.
-        return Bukkit.isGlobalTickThread();
+        return PaperSupport.isGlobalTickThread();
     }
 
     @Override
