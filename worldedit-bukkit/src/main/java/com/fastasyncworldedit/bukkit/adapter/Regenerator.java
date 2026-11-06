@@ -318,12 +318,13 @@ public abstract class Regenerator {
         private final BiomeType singleBiome;
         private final Region clip;
         // biome cell writes already done for this chunk: one bit per 4x4x4 cell of every section
-        private final long[] biomeCells = new long[(snapshot.sections.length * 64 + 63) >> 6];
+        private final long[] biomeCells;
 
         private SnapshotPattern(final SourceChunk snapshot, final BiomeType singleBiome, final Region clip) {
             this.snapshot = snapshot;
             this.singleBiome = singleBiome;
             this.clip = clip;
+            this.biomeCells = new long[(snapshot.sections.length * 64 + 63) >> 6];
         }
 
         @Override
