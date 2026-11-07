@@ -176,6 +176,9 @@ public class SingleThreadQueueExtent extends ExtentBatchProcessorHolder implemen
         } finally {
             getChunkLock.unlock();
         }
+        // entries left over from the previous session are completed by the region that owns them; nobody waits for
+        // them any more, and keeping them would make every later flush pay the full wait budget
+        this.submissions.clear();
         this.enabledQueue = true;
         this.currentThread = null;
         this.initialized = false;
@@ -421,14 +424,21 @@ public class SingleThreadQueueExtent extends ExtentBatchProcessorHolder implemen
         final int overflow = submissions.size() - targetSize;
         if (aggressive) {
             // one budget for the whole batch: a per submission limit would multiply the wait by the chunk count
-            final long deadline = System.currentTimeMillis() + AWAIT_TIMEOUT_MS;
+            final long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(AWAIT_TIMEOUT_MS);
             if (targetSize == 0) {
                 while (!submissions.isEmpty() && iterateSubmissions(deadline)) {
                     // drain, stopping as soon as the budget ran out
                 }
+            } else {
+                for (int i = 0; i < overflow; i++) {
+                    if (!iterateSubmissions(deadline)) {
+                        break;
+                    }
+                }
             }
-            for (int i = 0; i < overflow; i++) {
-                iterateSubmissions(deadline);
+            if (!submissions.isEmpty() && System.nanoTime() - deadline >= 0) {
+                LOGGER.warn("Gave up waiting for {} chunk writes after {} ms, they stay queued",
+                        submissions.size(), AWAIT_TIMEOUT_MS);
             }
         } else {
             for (int i = 0; i < overflow; i++) {
@@ -484,12 +494,11 @@ public class SingleThreadQueueExtent extends ExtentBatchProcessorHolder implemen
         }
         try {
             while (first != null) {
-                final long remaining = deadline - System.currentTimeMillis();
+                final long remaining = deadline - System.nanoTime();
                 if (remaining <= 0) {
-                    LOGGER.warn("Gave up waiting for chunk writes after {} ms, they stay queued", AWAIT_TIMEOUT_MS);
                     return false;
                 }
-                first = (Future) first.get(remaining, TimeUnit.MILLISECONDS);
+                first = (Future) first.get(remaining, TimeUnit.NANOSECONDS);
             }
         } catch (FaweException e) {
             Fawe.handleFaweException(faweExceptionReasonsUsed, e, LOGGER);
