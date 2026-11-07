@@ -163,7 +163,7 @@ public abstract class QueueHandler implements Trimable, Runnable {
             Runnable task = queue.poll();
             if (task == null) {
                 if (wait) {
-                    synchronized (syncTasks) {
+                    synchronized (queue) {
                         try {
                             queue.wait(1);
                         } catch (InterruptedException e) {
@@ -269,14 +269,10 @@ public abstract class QueueHandler implements Trimable, Runnable {
      */
     public <T> Future<T> sync(Runnable run) {
         if (routeAwayFromPump()) {
-            // the pump that drains this queue is not registered on regionised servers, so route the work through the
-            // platform scheduler instead of parking it forever
-            final FutureTask<T> result = new FutureTask<>(() -> {
+            return routeToGlobal(() -> {
                 run.run();
                 return null;
             });
-            TaskManager.taskManager().task(result);
-            return result;
         }
         return sync(run, syncTasks);
     }
@@ -290,6 +286,20 @@ public abstract class QueueHandler implements Trimable, Runnable {
     }
 
     /**
+     * Runs the work on the global tick thread. A caller that already is that thread runs it inline: handing it over
+     * would park the thread on its own next tick, which never comes while it waits.
+     */
+    private <T> Future<T> routeToGlobal(final Callable<T> task) {
+        final FutureTask<T> result = new FutureTask<>(task);
+        if (TaskManager.taskManager().isGlobalTickThread()) {
+            result.run();
+            return result;
+        }
+        TaskManager.taskManager().task(result);
+        return result;
+    }
+
+    /**
      * Submit a task to be run on the main thread. Does not guarantee to be run on the next tick as FAWE will only operate to
      * maintain approx. 18 tps.
      *
@@ -299,9 +309,7 @@ public abstract class QueueHandler implements Trimable, Runnable {
      */
     public <T> Future<T> sync(Callable<T> call) throws Exception {
         if (routeAwayFromPump()) {
-            final FutureTask<T> result = new FutureTask<>(call);
-            TaskManager.taskManager().task(result);
-            return result;
+            return routeToGlobal(call);
         }
         return sync(call, syncTasks);
     }
@@ -316,9 +324,7 @@ public abstract class QueueHandler implements Trimable, Runnable {
      */
     public <T> Future<T> sync(Supplier<T> supplier) {
         if (routeAwayFromPump()) {
-            final FutureTask<T> result = new FutureTask<>(supplier::get);
-            TaskManager.taskManager().task(result);
-            return result;
+            return routeToGlobal(supplier::get);
         }
         return sync(supplier, syncTasks);
     }
@@ -516,7 +522,7 @@ public abstract class QueueHandler implements Trimable, Runnable {
      */
     @Deprecated(forRemoval = true, since = "2.6.2")
     public void endSet(boolean parallel) {
-        startUnsafe(parallel);
+        endUnsafe(parallel);
     }
 
     /**

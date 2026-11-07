@@ -37,6 +37,8 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -73,6 +75,11 @@ public class SingleThreadQueueExtent extends ExtentBatchProcessorHolder implemen
     private int exceptionCount = 0;
     private SideEffectSet sideEffectSet = SideEffectSet.defaults();
     private int targetSize = Settings.settings().QUEUE.TARGET_SIZE;
+    /**
+     * Upper bound for waiting on a single chunk write. Generous compared to any real write (a whole 96³ edit lands in
+     * ~200 ms), and only reached when the thread owning the chunk never gets to it.
+     */
+    private static final long AWAIT_TIMEOUT_MS = 5000;
 
     public SingleThreadQueueExtent() {
     }
@@ -467,10 +474,14 @@ public class SingleThreadQueueExtent extends ExtentBatchProcessorHolder implemen
         Future first = submissions.poll();
         try {
             while (first != null) {
-                first = (Future) first.get();
+                first = (Future) first.get(AWAIT_TIMEOUT_MS, TimeUnit.MILLISECONDS);
             }
         } catch (FaweException e) {
             Fawe.handleFaweException(faweExceptionReasonsUsed, e, LOGGER);
+        } catch (TimeoutException e) {
+            // Chunk writes run on the thread owning the chunk. Waiting without a limit lets two region threads park on
+            // each other forever, so the rest of the chain is left to a later flush instead.
+            LOGGER.warn("Timed out after {} ms waiting for a chunk write, leaving it to a later flush", AWAIT_TIMEOUT_MS);
         } catch (ExecutionException | InterruptedException e) {
             if (e.getCause() instanceof FaweException) {
                 Fawe.handleFaweException(faweExceptionReasonsUsed, (FaweException) e.getCause(), LOGGER);

@@ -81,7 +81,8 @@ public abstract class ChunkListener implements Listener {
                     long key = entry.getLongKey();
                     int x = MathMan.unpairIntX(key);
                     int z = MathMan.unpairIntY(key);
-                    counter.put(key, badLimit);
+                    // one array per chunk: sharing badLimit would make every bad chunk count into the same slots
+                    counter.put(key, badLimit.clone());
                 }
                 badChunks.clear();
             }, Settings.settings().TICK_LIMITER.INTERVAL);

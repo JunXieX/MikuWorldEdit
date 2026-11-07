@@ -530,10 +530,7 @@ public class PaperweightGetBlocks extends AbstractBukkitGetBlocks<ServerLevel, L
                                 this.sections[getSectionIndex] = existingSection;
                                 this.reset();
                             }
-                            // The cached read array for this layer is refreshed by updateGet below, so unpacking the
-                            // existing section just to compare it first was pure overhead (one 4096 char array and one
-                            // full palette read per section). A failed section swap is the only case that needs the
-                            // old cache dropped, and that is handled where the swap is checked.
+                            // freshness of this layer read cache is handled below, right before the new section is built
                         } finally {
                             sectionLock.writeLock().unlock();
                         }
@@ -544,6 +541,9 @@ public class PaperweightGetBlocks extends AbstractBukkitGetBlocks<ServerLevel, L
                                 existingSection.getBiomes()
                         );
 
+                        // untouched (__RESERVED__) blocks are backfilled from this GET read cache, which may predate
+                        // the current section contents, so drop it and read the live section instead
+                        this.reset(layerNo);
                         newSection = PaperweightPlatformAdapter.newChunkSection(
                                 layerNo,
                                 this::load,

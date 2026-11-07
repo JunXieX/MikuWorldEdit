@@ -123,8 +123,12 @@ public abstract class Regenerator {
             final long startTime = System.nanoTime();
             runTasks(() -> System.nanoTime() - startTime < timeoutPerTick);
         }, 1);
-        target.setBlocks(region, pattern);
-        TaskManager.taskManager().cancel(taskId);
+        try {
+            target.setBlocks(region, pattern);
+        } finally {
+            // the pump keeps touching the temporary level, so it may never outlive the copy
+            TaskManager.taskManager().cancel(taskId);
+        }
     }
 
     private Pattern createPattern() {

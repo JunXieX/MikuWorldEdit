@@ -423,7 +423,7 @@ public abstract class AbstractChangeSet implements ChangeSet, IBatchProcessor {
                 if (completeNow) {
                     throw t;
                 } else {
-                    int hash = t.getMessage().hashCode();
+                    int hash = String.valueOf(t.getMessage()).hashCode();
                     if (lastException.getAndSet(hash) != hash) {
                         LOGGER.catching(t);
                     }

@@ -32,20 +32,23 @@ public class LazyBaseEntity extends BaseEntity {
     public LinCompoundTag getNbt() {
         Supplier<LinCompoundTag> tmp = saveTag;
         if (tmp != null) {
-            saveTag = null;
-            if (TaskManager.taskManager().isTickingThread()) {
-                setNbt(tmp.get());
-            } else if (location != null) {
-                final com.sk89q.worldedit.math.BlockVector3 position = location.toVector().toBlockPoint();
-                setNbt(TaskManager.taskManager().submitAt(
-                        com.fastasyncworldedit.core.wrappers.WorldWrapper.unwrap(location.getExtent()),
-                        position.x() >> 4,
-                        position.z() >> 4,
-                        tmp
-                ).join());
-            } else {
+            // the entity data may only be read on the thread owning its region; the supplier is kept until the read
+            // succeeded so a failed hop does not silently drop the entity data
+            if (location == null) {
                 setNbt(TaskManager.taskManager().sync(tmp));
+            } else {
+                final com.sk89q.worldedit.math.BlockVector3 position = location.toVector().toBlockPoint();
+                final com.sk89q.worldedit.world.World world =
+                        com.fastasyncworldedit.core.wrappers.WorldWrapper.unwrap(location.getExtent());
+                final int chunkX = position.x() >> 4;
+                final int chunkZ = position.z() >> 4;
+                if (TaskManager.taskManager().ownsRegion(world, chunkX, chunkZ)) {
+                    setNbt(tmp.get());
+                } else {
+                    setNbt(TaskManager.taskManager().submitAt(world, chunkX, chunkZ, tmp).join());
+                }
             }
+            saveTag = null;
         }
         return super.getNbt();
     }

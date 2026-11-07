@@ -1,6 +1,6 @@
 package com.fastasyncworldedit.core.extent;
 
-import com.fastasyncworldedit.core.Fawe;
+import com.fastasyncworldedit.core.util.TaskManager;
 import com.sk89q.worldedit.WorldEditException;
 import com.sk89q.worldedit.extent.AbstractDelegateExtent;
 import com.sk89q.worldedit.extent.Extent;
@@ -27,7 +27,9 @@ public class SlowExtent extends AbstractDelegateExtent {
         increment += nanos;
         if (increment >= THRESHOLD) {
             long wait = increment / 1000000;
-            if (!Fawe.isMainThread()) {
+            // Sleeping a tick thread would throttle the whole region instead of this edit, so the delay is only taken
+            // where nothing is being ticked.
+            if (!TaskManager.taskManager().isTickingThread()) {
                 try {
                     Thread.sleep(wait);
                 } catch (InterruptedException e) {

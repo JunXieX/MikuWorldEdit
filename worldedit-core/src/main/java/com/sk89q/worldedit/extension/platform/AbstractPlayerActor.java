@@ -533,7 +533,7 @@ public abstract class AbstractPlayerActor implements Actor, Player, Cloneable {
     @Override
     public void loadClipboardFromDisk() {
         if (!clipboardLoading.tryAcquire()) {
-            if (!Fawe.isMainThread()) {
+            if (!TaskManager.taskManager().isTickingThread()) {
                 try {
                     clipboardLoading.acquire();
                     clipboardLoading.release();
@@ -572,7 +572,9 @@ public abstract class AbstractPlayerActor implements Actor, Player, Cloneable {
                     clipboardLoading.release();
                 }
             });
-            if (Fawe.isMainThread()) {
+            // A tick thread must not wait for the clipboard to be deserialised, the result is picked up by the
+            // session once the task lands.
+            if (TaskManager.taskManager().isTickingThread()) {
                 return;
             }
             fut.get();
