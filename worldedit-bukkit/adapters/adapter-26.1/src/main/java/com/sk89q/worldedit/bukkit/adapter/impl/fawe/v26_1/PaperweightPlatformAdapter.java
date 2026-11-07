@@ -352,33 +352,19 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
         }
     }
 
-    private static final java.util.Set<String> REGIONISED_WORLDS = java.util.concurrent.ConcurrentHashMap.newKeySet();
-
     /**
      * Whether the level takes part in the regioniser. Levels created for regeneration are private to FAWE, are not
-     * registered with the server, and have to be driven from the calling thread.
+     * registered with the server, and have to be driven from the calling thread. Compared by identity: the adapters
+     * that rename the temporary level to the original name cannot be told apart by name.
      */
     public static boolean isRegionised(org.bukkit.World world) {
-        final String name = world.getName();
-        if (REGIONISED_WORLDS.contains(name)) {
-            return true;
-        }
-        if (Bukkit.getWorld(name) != null) {
-            REGIONISED_WORLDS.add(name);
-            return true;
-        }
-        return false;
+        return Bukkit.getWorld(world.getName()) == world;
     }
 
     private static void addTicket(ServerLevel serverLevel, int chunkX, int chunkZ) {
         final Runnable addTicket = () -> serverLevel
                 .getChunkSource()
                 .addTicketWithRadius(ChunkHolderManager.UNLOAD_COOLDOWN, new ChunkPos(chunkX, chunkZ), 0);
-        if (PaperSupport.isFolia()) {
-            // The global/main executor does not run region work on Folia; this is already the owning region thread
-            addTicket.run();
-            return;
-        }
         // Ensure chunk is definitely loaded before applying a ticket
         io.papermc.paper.util.MCUtil.MAIN_EXECUTOR.execute(addTicket);
     }
