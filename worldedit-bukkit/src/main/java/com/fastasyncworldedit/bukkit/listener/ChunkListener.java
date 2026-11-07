@@ -55,8 +55,14 @@ public abstract class ChunkListener implements Listener {
     private static final Logger LOGGER = LogManagerCompat.getLogger();
     protected int rateLimit = 0;
     protected Location lastCancelPos;
-    private final int[] badLimit = new int[]{Settings.settings().TICK_LIMITER.PHYSICS_MS,
-            Settings.settings().TICK_LIMITER.FALLING, Settings.settings().TICK_LIMITER.ITEMS};
+    /**
+     * Fresh counters for one chunk. A shared template would be poisoned by {@link #cancel}, which writes MAX_VALUE into
+     * the array it is handed.
+     */
+    private static int[] newCounters() {
+        return new int[]{Settings.settings().TICK_LIMITER.PHYSICS_MS,
+                Settings.settings().TICK_LIMITER.FALLING, Settings.settings().TICK_LIMITER.ITEMS};
+    }
 
     public ChunkListener() {
         if (Settings.settings().TICK_LIMITER.ENABLED) {
@@ -81,8 +87,7 @@ public abstract class ChunkListener implements Listener {
                     long key = entry.getLongKey();
                     int x = MathMan.unpairIntX(key);
                     int z = MathMan.unpairIntY(key);
-                    // one array per chunk: sharing badLimit would make every bad chunk count into the same slots
-                    counter.put(key, badLimit.clone());
+                    counter.put(key, newCounters());
                 }
                 badChunks.clear();
             }, Settings.settings().TICK_LIMITER.INTERVAL);
@@ -323,7 +328,6 @@ public abstract class ChunkListener implements Listener {
     private void cancel(int cx, int cz) {
         long key = MathMan.pairInt(cx, cz);
         badChunks.put(key, (Boolean) true);
-        counter.put(key, badLimit);
         int[] count = getCount(cx, cz);
         count[0] = Integer.MAX_VALUE;
         count[1] = Integer.MAX_VALUE;

@@ -193,7 +193,16 @@ public class BukkitBlockCommandSender extends AbstractCommandBlockActor {
             @Override
             public boolean isActive() {
                 if (PaperSupport.isFolia()) {
-                    // Regionised servers may only read a block on the thread owning it; keep the last known state
+                    // Regionised servers may only read a block on the thread owning it, so the state is refreshed
+                    // whenever the caller happens to be that thread and kept otherwise
+                    final Block block = sender.getBlock();
+                    if (TaskManager.taskManager().ownsRegion(
+                            com.sk89q.worldedit.bukkit.BukkitAdapter.adapt(block.getWorld()),
+                            block.getX() >> 4,
+                            block.getZ() >> 4
+                    )) {
+                        updateActive();
+                    }
                     return active;
                 }
                 if (Bukkit.isPrimaryThread()) {

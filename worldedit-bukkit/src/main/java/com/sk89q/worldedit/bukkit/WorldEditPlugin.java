@@ -256,7 +256,13 @@ public class WorldEditPlugin extends JavaPlugin {
         } else {
             //FAWE start - a Paper plugin is enabled after the worlds exist, so this is the normal path here
             setupPreWorldData();
-            setupWorldData();
+            try {
+                setupWorldData();
+            } catch (Throwable e) {
+                // Registries or mappings failed. Keep the plugin loaded so WorldEdit dependents still start and every
+                // edit fails with a usable error instead of the server losing the whole platform.
+                LOGGER.error("Failed to load world data", e);
+            }
             //FAWE end
         }
 

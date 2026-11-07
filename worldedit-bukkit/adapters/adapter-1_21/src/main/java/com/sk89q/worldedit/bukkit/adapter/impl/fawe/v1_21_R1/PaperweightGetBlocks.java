@@ -469,6 +469,9 @@ public class PaperweightGetBlocks extends AbstractBukkitGetBlocks<ServerLevel, L
                         PaperweightPlatformAdapter.clearCounts(existingSection);
                     }
 
+                    // the read cache also feeds the pre-edit snapshot below and the untouched block backfill, and both
+                    // must see the live section rather than whatever was cached when the edit started
+                    this.reset(layerNo);
                     if (createCopy) {
                         char[] tmpLoad = load(layerNo);
                         char[] copyArr = new char[4096];
@@ -545,9 +548,6 @@ public class PaperweightGetBlocks extends AbstractBukkitGetBlocks<ServerLevel, L
                                 existingSection.getBiomes()
                         );
 
-                        // untouched (__RESERVED__) blocks are backfilled from this GET read cache, which may predate
-                        // the current section contents, so drop it and read the live section instead
-                        this.reset(layerNo);
                         newSection = PaperweightPlatformAdapter.newChunkSection(
                                 layerNo,
                                 this::load,

@@ -42,6 +42,9 @@ import static com.google.common.base.Preconditions.checkNotNull;
 public class BukkitEntity implements Entity {
 //FAWE end
 
+    private static final org.apache.logging.log4j.Logger LOGGER =
+            com.sk89q.worldedit.internal.util.LogManagerCompat.getLogger();
+
     private final WeakReference<org.bukkit.entity.Entity> entityRef;
     //FAWE start
     private final EntityType type;
@@ -133,7 +136,10 @@ public class BukkitEntity implements Entity {
                     }
                     return true;
                 }
-        );
+        ).exceptionally(t -> {
+            LOGGER.warn("Could not remove entity at {},{}", location.getBlockX() >> 4, location.getBlockZ() >> 4, t);
+            return null;
+        });
         return true;
     }
 

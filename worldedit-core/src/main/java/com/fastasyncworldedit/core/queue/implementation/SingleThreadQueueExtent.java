@@ -76,8 +76,8 @@ public class SingleThreadQueueExtent extends ExtentBatchProcessorHolder implemen
     private SideEffectSet sideEffectSet = SideEffectSet.defaults();
     private int targetSize = Settings.settings().QUEUE.TARGET_SIZE;
     /**
-     * Upper bound for waiting on a single chunk write. Generous compared to any real write (a whole 96³ edit lands in
-     * ~200 ms), and only reached when the thread owning the chunk never gets to it.
+     * Total budget for waiting on chunk writes in one flush. Generous compared to any real batch (a whole 96³ edit
+     * lands in ~200 ms); only reached when the region owning a chunk never gets to it.
      */
     private static final long AWAIT_TIMEOUT_MS = 5000;
 
@@ -420,13 +420,15 @@ public class SingleThreadQueueExtent extends ExtentBatchProcessorHolder implemen
     private void pollSubmissions(int targetSize, boolean aggressive) {
         final int overflow = submissions.size() - targetSize;
         if (aggressive) {
+            // one budget for the whole batch: a per submission limit would multiply the wait by the chunk count
+            final long deadline = System.currentTimeMillis() + AWAIT_TIMEOUT_MS;
             if (targetSize == 0) {
-                while (!submissions.isEmpty()) {
-                    iterateSubmissions();
+                while (!submissions.isEmpty() && iterateSubmissions(deadline)) {
+                    // drain, stopping as soon as the budget ran out
                 }
             }
             for (int i = 0; i < overflow; i++) {
-                iterateSubmissions();
+                iterateSubmissions(deadline);
             }
         } else {
             for (int i = 0; i < overflow; i++) {
@@ -470,18 +472,29 @@ public class SingleThreadQueueExtent extends ExtentBatchProcessorHolder implemen
         }
     }
 
-    private void iterateSubmissions() {
-        Future first = submissions.poll();
+    /**
+     * Completes one submission chain. Returns false when the budget ran out, in which case the chain stays queued for
+     * the next flush: chunk writes run on the region owning the chunk, and a scheduled task that never runs (region
+     * gone, plugin disabling) must not park the caller forever.
+     */
+    private boolean iterateSubmissions(final long deadline) {
+        Future first = submissions.peek();
+        if (first == null) {
+            return true;
+        }
         try {
             while (first != null) {
-                first = (Future) first.get(AWAIT_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+                final long remaining = deadline - System.currentTimeMillis();
+                if (remaining <= 0) {
+                    LOGGER.warn("Gave up waiting for chunk writes after {} ms, they stay queued", AWAIT_TIMEOUT_MS);
+                    return false;
+                }
+                first = (Future) first.get(remaining, TimeUnit.MILLISECONDS);
             }
         } catch (FaweException e) {
             Fawe.handleFaweException(faweExceptionReasonsUsed, e, LOGGER);
         } catch (TimeoutException e) {
-            // Chunk writes run on the thread owning the chunk. Waiting without a limit lets two region threads park on
-            // each other forever, so the rest of the chain is left to a later flush instead.
-            LOGGER.warn("Timed out after {} ms waiting for a chunk write, leaving it to a later flush", AWAIT_TIMEOUT_MS);
+            return false;
         } catch (ExecutionException | InterruptedException e) {
             if (e.getCause() instanceof FaweException) {
                 Fawe.handleFaweException(faweExceptionReasonsUsed, (FaweException) e.getCause(), LOGGER);
@@ -498,6 +511,8 @@ public class SingleThreadQueueExtent extends ExtentBatchProcessorHolder implemen
                 }
             }
         }
+        submissions.poll();
+        return true;
     }
 
     @Override
